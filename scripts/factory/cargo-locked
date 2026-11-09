@@ -1,0 +1,2 @@
+#!/bin/sh
+exec cargo "$@" --locked --features codex-install-context/factory

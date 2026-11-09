@@ -20,6 +20,16 @@ const RESOURCES_DIRNAME: &str = "codex-resources";
 const STANDALONE_PACKAGES_DIRNAME: &str = "standalone";
 static INSTALL_CONTEXT: OnceLock<InstallContext> = OnceLock::new();
 
+/// Factory releases are selected by an operator against an external digest pin.
+/// Public vendor updaters must never replace this fork, including on explicit request.
+pub fn public_updates_allowed() -> bool {
+    !cfg!(feature = "factory")
+}
+
+pub const FACTORY_ID: &str = "ignibyte-codex-factory";
+pub const FACTORY_UPDATE_REFUSAL: &str =
+    "factory_update_pinned: select a verified factory package with the operator package selector";
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StandalonePlatform {
     Unix,

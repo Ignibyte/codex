@@ -293,6 +293,10 @@ pub async fn run_pid_update_loop(
     http_client_factory: codex_http_client::HttpClientFactory,
     restore_release: Option<String>,
 ) -> Result<()> {
+    anyhow::ensure!(
+        codex_install_context::public_updates_allowed(),
+        codex_install_context::FACTORY_UPDATE_REFUSAL
+    );
     ensure_supported_platform()?;
     #[cfg(windows)]
     backend::windows::ensure_not_elevated()?;
@@ -316,6 +320,10 @@ pub fn maintain_stderr_log() -> Result<()> {
 pub async fn update(
     http_client_factory: codex_http_client::HttpClientFactory,
 ) -> Result<UpdateOutput> {
+    anyhow::ensure!(
+        codex_install_context::public_updates_allowed(),
+        codex_install_context::FACTORY_UPDATE_REFUSAL
+    );
     ensure_supported_platform()?;
     #[cfg(windows)]
     backend::windows::ensure_not_elevated()?;

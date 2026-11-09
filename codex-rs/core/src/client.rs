@@ -1132,6 +1132,20 @@ impl ModelClient {
 
     fn prepare_response_items_for_request(&self, input: &mut [ResponseItem]) {
         for item in input {
+            // Early factory rollouts used a prefix that the Responses API rejects.
+            // Translate only the outgoing copy. Keep the recorded UUID and history
+            // intact so native delivery reconciliation can still identify it.
+            if let ResponseItem::AgentMessage {
+                id: Some(id),
+                author,
+                ..
+            } = item
+                && author.starts_with("/coworker/")
+                && let Some(suffix) = id.as_str().strip_prefix("factory_")
+                && Uuid::parse_str(suffix).is_ok()
+            {
+                *id = ResponseItemId::with_suffix("amsg", suffix);
+            }
             if item.id().is_some_and(|id| !id.is_prefixed()) {
                 item.set_id(/*new_id*/ None);
             }

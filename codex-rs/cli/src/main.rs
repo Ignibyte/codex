@@ -148,6 +148,8 @@ struct MultitoolCli {
 
 #[derive(Debug, clap::Subcommand)]
 enum Subcommand {
+    /// Report this fork's compiled identity and package update policy.
+    FactoryInfo,
     /// Browse all agent sessions on the shared local app-server daemon.
     Agents(AgentsCommand),
 
@@ -803,6 +805,10 @@ fn run_update_action(
     action: UpdateAction,
     cli_executable: Option<&std::path::Path>,
 ) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        codex_install_context::public_updates_allowed(),
+        codex_install_context::FACTORY_UPDATE_REFUSAL
+    );
     if let UpdateAction::Daemon(source) = action {
         let executable = cli_executable
             .ok_or_else(|| anyhow::anyhow!("Cannot locate the launching Codex CLI"))?;
@@ -884,6 +890,10 @@ fn resolve_windows_update_command_from_path(
 }
 
 fn run_update_command() -> anyhow::Result<()> {
+    anyhow::ensure!(
+        codex_install_context::public_updates_allowed(),
+        codex_install_context::FACTORY_UPDATE_REFUSAL
+    );
     #[cfg(debug_assertions)]
     {
         anyhow::bail!(
@@ -1062,6 +1072,21 @@ async fn cli_main(
         subcommand,
     } = config_override_args::try_parse_from(std::env::args_os())
         .unwrap_or_else(|error| error.exit());
+    if !codex_install_context::public_updates_allowed()
+        && matches!(
+            &subcommand,
+            Some(Subcommand::Update)
+                | Some(Subcommand::AppServer(AppServerCommand {
+                    subcommand: Some(AppServerSubcommand::Daemon(AppServerDaemonCommand {
+                        subcommand: AppServerDaemonSubcommand::Update { .. }
+                            | AppServerDaemonSubcommand::PidUpdateLoop { .. },
+                    })),
+                    ..
+                }))
+        )
+    {
+        anyhow::bail!(codex_install_context::FACTORY_UPDATE_REFUSAL);
+    }
     // Retain the launch target through TUI exit, even if a launcher changes selection.
     let daemon_cli_executable = arg0_paths
         .codex_self_exe
@@ -1724,6 +1749,31 @@ async fn cli_main(
             )?;
             print_completion(completion_cli);
         }
+        Some(Subcommand::FactoryInfo) => {
+            reject_remote_mode_for_subcommand(
+                root_remote.as_deref(),
+                root_remote_auth_token_env.as_deref(),
+                "factory-info",
+            )?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "factoryId": codex_install_context::FACTORY_ID,
+                    "revision": env!("CODEX_FACTORY_REVISION"),
+                    "publicUpdatesAllowed": codex_install_context::public_updates_allowed(),
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "storageEpoch": 11,
+                    "bridgeStorageEpoch": 7,
+                    "nativeFactoryStorageEpoch": 2,
+                    "recordingStorageEpoch": 1,
+                    "observationStorageEpoch": 2,
+                    "networkTransportProtocol": 1,
+                    "foremanStorageEpoch": 3,
+                    "managerStorageEpoch": 1,
+                    "supportStorageEpoch": 1,
+                })
+            );
+        }
         Some(Subcommand::Update) => {
             reject_remote_mode_for_subcommand(
                 root_remote.as_deref(),
@@ -2364,6 +2414,7 @@ fn unsupported_subcommand_name_for_strict_config(
         | Some(Subcommand::Unarchive(_))
         | Some(Subcommand::Fork(_))
         | Some(Subcommand::Doctor(_)) => None,
+        Some(Subcommand::FactoryInfo) => Some("factory-info"),
         Some(Subcommand::AppServer(app_server)) if app_server.subcommand.is_none() => None,
         Some(Subcommand::AppServer(app_server)) => {
             Some(app_server_subcommand_name(app_server.subcommand.as_ref()))

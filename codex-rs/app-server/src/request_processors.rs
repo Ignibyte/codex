@@ -548,6 +548,8 @@ pub(crate) mod config_processor;
 mod config_reload_tests;
 mod diagnostics;
 mod environment_processor;
+#[cfg(target_os = "linux")]
+mod factory;
 mod feedback_doctor_report;
 mod feedback_processor;
 mod feedback_rollout_history;

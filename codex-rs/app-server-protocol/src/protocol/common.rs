@@ -874,6 +874,47 @@ client_request_definitions! {
         serialization: None,
         response: v2::ThreadLoadedListResponse,
     },
+    #[experimental("factory/status")]
+    FactoryStatus => "factory/status" {
+        params: v2::FactoryMessageIdParams,
+        serialization: None,
+        manual_payload_conversion: manual,
+        response: v2::FactoryResponse,
+    },
+    #[experimental("factory/cancel")]
+    FactoryCancel => "factory/cancel" {
+        params: v2::FactoryMessageIdParams,
+        serialization: None,
+        manual_payload_conversion: manual,
+        response: v2::FactoryResponse,
+    },
+    #[experimental("factory/peers")]
+    FactoryPeers => "factory/peers" {
+        params: v2::FactoryListParams,
+        serialization: None,
+        response: v2::FactoryResponse,
+    },
+    #[experimental("factory/inbox")]
+    FactoryInbox => "factory/inbox" {
+        params: v2::FactoryListParams,
+        serialization: None,
+        manual_payload_conversion: manual,
+        response: v2::FactoryResponse,
+    },
+    #[experimental("factory/send")]
+    FactorySend => "factory/send" {
+        params: v2::FactorySendParams,
+        serialization: None,
+        manual_payload_conversion: manual,
+        response: v2::FactoryResponse,
+    },
+    #[experimental("thread/factoryMessage")]
+    ThreadFactoryMessage => "thread/factoryMessage" {
+        params: v2::ThreadFactoryMessageParams,
+        serialization: thread_id(params.thread_id),
+        manual_payload_conversion: manual,
+        response: v2::FactoryResponse,
+    },
     ThreadRead => "thread/read" {
         params: v2::ThreadReadParams,
         serialization: thread_id(params.thread_id),

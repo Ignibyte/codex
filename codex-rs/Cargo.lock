@@ -2084,6 +2084,7 @@ dependencies = [
  "codex-exec-server",
  "codex-extension-api",
  "codex-external-agent-migration",
+ "codex-factory",
  "codex-features",
  "codex-feedback",
  "codex-file-search",
@@ -2092,6 +2093,7 @@ dependencies = [
  "codex-git-utils",
  "codex-goal-extension",
  "codex-guardian-v2",
+ "codex-history",
  "codex-history-notes-extension",
  "codex-home",
  "codex-hooks",
@@ -3428,6 +3430,23 @@ dependencies = [
  "tokio",
  "toml 0.9.11+spec-1.1.0",
  "tracing",
+]
+
+[[package]]
+name = "codex-factory"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hmac 0.12.1",
+ "libc",
+ "rand 0.9.3",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

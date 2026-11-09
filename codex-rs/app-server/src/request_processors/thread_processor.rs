@@ -457,6 +457,8 @@ fn validate_dynamic_tools(tools: &[DynamicToolSpec]) -> Result<(), String> {
 
 #[derive(Clone)]
 pub(crate) struct ThreadRequestProcessor {
+    #[cfg(target_os = "linux")]
+    pub(super) factory_bridge: Arc<Result<Option<super::factory::FactoryBridge>, String>>,
     pub(super) auth_manager: Arc<AuthManager>,
     pub(crate) thread_manager: Arc<ThreadManager>,
     pub(super) outgoing: Arc<OutgoingMessageSender>,
@@ -518,6 +520,11 @@ impl ThreadRequestProcessor {
         sample_responses: Arc<crate::thread_sample::SampleResponseRegistry>,
     ) -> Self {
         Self {
+            #[cfg(target_os = "linux")]
+            factory_bridge: Arc::new(
+                super::factory::FactoryBridge::from_environment()
+                    .map_err(|error| error.to_string()),
+            ),
             auth_manager,
             thread_manager,
             outgoing,
@@ -6884,3 +6891,33 @@ fn build_thread_from_loaded_snapshot(
 #[cfg(test)]
 #[path = "thread_processor_tests.rs"]
 mod thread_processor_tests;
+
+#[cfg(not(target_os = "linux"))]
+impl ThreadRequestProcessor {
+    pub(crate) async fn factory_status(
+        &self,
+        _params: codex_app_server_protocol::FactoryMessageIdParams,
+        _cancel: bool,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        Err(invalid_request("factory_requires_linux"))
+    }
+    pub(crate) async fn factory_list(
+        &self,
+        _params: codex_app_server_protocol::FactoryListParams,
+        _peers: bool,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        Err(invalid_request("factory_requires_linux"))
+    }
+    pub(crate) async fn factory_send(
+        &self,
+        _params: codex_app_server_protocol::FactorySendParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        Err(invalid_request("factory_requires_linux"))
+    }
+    pub(crate) async fn factory_message(
+        &self,
+        _params: codex_app_server_protocol::ThreadFactoryMessageParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        Err(invalid_request("factory_requires_linux"))
+    }
+}

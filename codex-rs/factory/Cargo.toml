@@ -1,0 +1,31 @@
+[package]
+name = "codex-factory"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "codex-factory-bridge"
+path = "src/main.rs"
+
+[lib]
+doctest = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["serde", "v4"] }
+hmac = { workspace = true }
+libc = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+tokio = { workspace = true, features = ["rt", "time", "process", "io-util"] }
+
+[features]
+fixture-faults = []

@@ -380,9 +380,7 @@ impl MessageProcessor {
                     thread_state_manager.clone(),
                 )),
                 Some({
-                    let time_provider =
-                        app_server_time_provider(outgoing.clone(), thread_state_manager.clone());
-                    time_provider
+                    app_server_time_provider(outgoing.clone(), thread_state_manager.clone()) as _
                 }),
             );
             match code_mode_session_provider {
@@ -1549,6 +1547,24 @@ impl MessageProcessor {
             }
             ClientRequest::ThreadLoadedList { params, .. } => {
                 self.thread_processor.thread_loaded_list(params).await
+            }
+            ClientRequest::FactoryStatus { params, .. } => {
+                self.thread_processor.factory_status(params, false).await
+            }
+            ClientRequest::FactoryCancel { params, .. } => {
+                self.thread_processor.factory_status(params, true).await
+            }
+            ClientRequest::FactoryPeers { params, .. } => {
+                self.thread_processor.factory_list(params, true).await
+            }
+            ClientRequest::FactoryInbox { params, .. } => {
+                self.thread_processor.factory_list(params, false).await
+            }
+            ClientRequest::FactorySend { params, .. } => {
+                self.thread_processor.factory_send(params).await
+            }
+            ClientRequest::ThreadFactoryMessage { params, .. } => {
+                self.thread_processor.factory_message(params).await
             }
             ClientRequest::ThreadRead { params, .. } => {
                 self.thread_processor.thread_read(&request_id, params).await

@@ -2191,3 +2191,48 @@ pub struct ContextCompactedNotification {
     pub thread_id: String,
     pub turn_id: String,
 }
+
+/// Factory credentials, sender identity and execution policy are operator-owned.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export_to = "v2/")]
+pub struct FactoryListParams {
+    pub project: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export_to = "v2/")]
+pub struct FactorySendParams {
+    pub message_id: String,
+    pub conversation_id: String,
+    pub recipient: String,
+    pub project: String,
+    pub kind: String,
+    pub mode: String,
+    pub text: String,
+    pub reply_to: Option<String>,
+    pub expires_in_seconds: u64,
+}
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export_to = "v2/")]
+pub struct ThreadFactoryMessageParams {
+    pub thread_id: String,
+    pub project: String,
+    pub message_id: String,
+}
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct FactoryResponse {
+    pub data: JsonValue,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export_to = "v2/")]
+pub struct FactoryMessageIdParams {
+    pub project: String,
+    pub message_id: String,
+}

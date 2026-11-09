@@ -117,6 +117,9 @@ pub(crate) fn is_stable_standalone_release(codex_home: &Path, codex_bin: &Path) 
 
 /// Older managed binaries can serve app-server requests without owning an updater.
 pub(crate) async fn supports_daemon_update_loop(codex_bin: &Path) -> bool {
+    if !codex_install_context::public_updates_allowed() {
+        return false;
+    }
     supports_daemon_command(codex_bin, &["pid-update-loop", "--help"]).await
 }
 

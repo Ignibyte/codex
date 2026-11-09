@@ -24,6 +24,7 @@ members = [
     "arg0",
     "feedback",
     "features",
+    "factory",
     "install-context",
     "codex-backend-openapi-models",
     "code-mode",
@@ -220,6 +221,7 @@ codex-agent-message-board-extension = { path = "ext/agent-message-board" }
 codex-message-board = { path = "message-board" }
 codex-connectors-extension = { path = "ext/connectors" }
 codex-context-fragments = { path = "context-fragments" }
+codex-factory = { path = "factory" }
 codex-core = { path = "core" }
 codex-core-api = { path = "core-api" }
 codex-core-plugin-common = { path = "core-plugin-common" }

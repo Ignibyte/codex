@@ -47,6 +47,10 @@ pub(super) async fn prepare(daemon: &Daemon, settings: &DaemonSettings) -> Resul
 pub async fn update_from_cli(
     confirm: impl FnOnce(&InstallRequest) -> Result<bool>,
 ) -> Result<Option<crate::UpdateOutput>> {
+    anyhow::ensure!(
+        codex_install_context::public_updates_allowed(),
+        codex_install_context::FACTORY_UPDATE_REFUSAL
+    );
     crate::ensure_supported_platform()?;
     #[cfg(windows)]
     crate::backend::windows::ensure_not_elevated()?;

@@ -44,6 +44,8 @@ codex-code-mode = { workspace = true }
 codex-config = { workspace = true }
 codex-network-proxy = { workspace = true }
 codex-connectors = { workspace = true }
+codex-factory = { workspace = true }
+codex-history = { workspace = true }
 codex-core = { workspace = true }
 codex-core-plugins = { workspace = true }
 codex-diagnostics = { workspace = true }
@@ -166,3 +168,6 @@ tokio-rustls = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 wiremock = { workspace = true }
+
+[features]
+factory-fixture-faults = ["codex-factory/fixture-faults"]

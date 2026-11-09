@@ -12,6 +12,9 @@ doctest = false
 [lints]
 workspace = true
 
+[features]
+factory = []
+
 [dependencies]
 codex-utils-absolute-path = { workspace = true }
 codex-utils-home-dir = { workspace = true }

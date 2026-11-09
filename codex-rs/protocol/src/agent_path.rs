@@ -19,6 +19,15 @@ impl AgentPath {
     pub const MORPHEUS: &str = "/morpheus";
     const ROOT_SEGMENT: &str = "root";
 
+    /// An independent coworker is an external author, never a local child.
+    pub fn coworker(seat: uuid::Uuid, incarnation: uuid::Uuid) -> Self {
+        Self(format!(
+            "/coworker/{}/{}",
+            seat.simple(),
+            incarnation.simple()
+        ))
+    }
+
     pub fn root() -> Self {
         Self(Self::ROOT.to_string())
     }
@@ -147,6 +156,20 @@ fn validate_agent_name(agent_name: &str) -> Result<(), String> {
 }
 
 fn validate_absolute_path(path: &str) -> Result<(), String> {
+    if let Some(external) = path.strip_prefix("/coworker/") {
+        let parts = external.split('/').collect::<Vec<_>>();
+        if parts.len() == 2
+            && parts.iter().all(|part| {
+                part.len() == 32
+                    && part
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            })
+        {
+            return Ok(());
+        }
+        return Err("coworker paths require one seat and incarnation".into());
+    }
     if path == AgentPath::MORPHEUS {
         return Ok(());
     }
