@@ -37,7 +37,7 @@ use codex_app_server_protocol::ThreadCompactStartParams;
 use codex_app_server_protocol::ThreadCompactStartResponse;
 use codex_app_server_protocol::ThreadForkParams;
 use codex_app_server_protocol::ThreadForkResponse;
-use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::ThreadStartParams;
@@ -1003,9 +1003,15 @@ async fn guardian_v2_routes_scoped_tool_approvals(
             Some(thread_id)
         }
     };
+    let traces = TempDir::new()?;
+    let trace_root = matches!(review_outcome, ReviewOutcome::Deny)
+        .then(|| traces.path().to_str().expect("trace root path"));
     let mut app_server = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .with_env_overrides(&[("OTEL_METRIC_EXPORT_INTERVAL", Some("25"))])
+        .with_env_overrides(&[
+            ("OTEL_METRIC_EXPORT_INTERVAL", Some("25")),
+            ("CODEX_ROLLOUT_TRACE_ROOT", trace_root),
+        ])
         .build_initialized_with_timeout(TIMEOUT)
         .await?;
     let thread = match lifecycle {
@@ -2066,6 +2072,37 @@ async fn guardian_v2_routes_scoped_tool_approvals(
         })
         .await?;
         timeout(TIMEOUT, app_server.shutdown_gracefully()).await??;
+        if matches!(review_outcome, ReviewOutcome::Deny) {
+            // Denied calls have no backend response, but their runtime result must
+            // still be available to trace consumers alongside executed calls.
+            let mut denied_results = Vec::new();
+            for entry in std::fs::read_dir(traces.path())? {
+                let bundle = entry?.path();
+                for line in std::fs::read_to_string(bundle.join("trace.jsonl"))?.lines() {
+                    let event: Value = serde_json::from_str(line)?;
+                    let payload = &event["payload"];
+                    if event["thread_id"] == reviewed_thread_id
+                        && payload["type"] == "tool_call_runtime_ended"
+                        && payload["tool_call_id"] == "guardian-action-0"
+                    {
+                        assert_eq!(payload["status"], "failed");
+                        let path = payload["runtime_payload"]["path"]
+                            .as_str()
+                            .expect("MCP runtime payload path");
+                        let result: Value =
+                            serde_json::from_reader(std::fs::File::open(bundle.join(path))?)?;
+                        denied_results.push(result);
+                    }
+                }
+            }
+            assert_eq!(denied_results.len(), 1);
+            assert!(
+                denied_results[0]["result"]["Err"]
+                    .as_str()
+                    .expect("denied MCP result")
+                    .contains("The destination is not authorized.")
+            );
+        }
         let reviewer_id = responses_state
             .guardian_requests
             .lock()
@@ -2523,6 +2560,98 @@ async fn first_cua_review_does_not_wait_for_initial_score(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn synchronous_cua_call_consumes_the_initial_call_allowance() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    const SYNCHRONOUS_MODEL: &str = "synchronous-cua";
+    let state = Arc::new(MockResponsesState {
+        mcp_server_name: Some("cua_repl"),
+        mcp_tool_sequence: Some(&["js"]),
+        ..Default::default()
+    });
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let responses_url = format!("http://{}", listener.local_addr()?);
+    let router = Router::new()
+        .route("/v1/responses", get(luna_websocket).post(parent_response))
+        .with_state(Arc::clone(&state));
+    let responses_server = tokio::spawn(async move {
+        let _ = axum::serve(listener, router).await;
+    });
+    let (mcp_url, mcp_server) =
+        start_mcp_server_with_tools(&["js"], /*sensitive_action*/ None).await?;
+    let codex_home = TempDir::new()?;
+    MockResponsesConfig::new(&responses_url)
+        .with_model(SYNCHRONOUS_MODEL)
+        .with_provider_config("supports_websockets = false")
+        .with_approval_policy("on-request")
+        .with_root_config("approvals_reviewer = \"auto_review\"")
+        .with_extra_config(&format!(
+            "[mcp_servers.cua_repl]\nurl = \"{mcp_url}/mcp\"\ndefault_tools_approval_mode = \"auto\""
+        ))
+        .enable_feature(Feature::GuardianApproval)
+        .enable_feature(Feature::GuardianV2)
+        .write(codex_home.path())?;
+    let config = load_default_config_for_test(&codex_home).await;
+    let models = [
+        (
+            SYNCHRONOUS_MODEL,
+            codex_protocol::openai_models::GuardianReviewMode::Synchronous,
+        ),
+        (
+            MODEL,
+            codex_protocol::openai_models::GuardianReviewMode::Adaptive,
+        ),
+    ]
+    .map(|(slug, mode)| {
+        let mut model = codex_core::test_support::construct_model_info_offline(slug, &config);
+        model.node_repl_auto_review_required = true;
+        model.guardian = Some(codex_protocol::openai_models::GuardianModelPolicy {
+            computer_use: Some(mode),
+            ..Default::default()
+        });
+        model
+    });
+    write_models_cache_with_models(codex_home.path(), models.into()).await?;
+    let mut app_server = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized_with_timeout(TIMEOUT)
+        .await?;
+    let thread = app_server
+        .start_thread(ThreadStartParams::default())
+        .await?
+        .thread;
+    // Both calls need fresh review: the synchronous first turn must consume the
+    // allowance before the second turn enables adaptive scoring. Scores stay pending.
+    for model in [SYNCHRONOUS_MODEL, MODEL] {
+        state.parent_requests.store(0, Ordering::SeqCst);
+        let expected_reviews = state.guardian_reviews.load(Ordering::SeqCst) + 1;
+        state.allow_guardian_review.notify_one();
+        let request_id = app_server
+            .send_turn_start_request(TurnStartParams {
+                thread_id: thread.id.clone(),
+                model: Some(model.to_owned()),
+                input: vec![UserInput::Text {
+                    text: USER_CONTEXT.to_owned(),
+                    text_elements: Vec::new(),
+                }],
+                ..Default::default()
+            })
+            .await?;
+        let _: TurnStartResponse = timeout(TIMEOUT, app_server.read_response(request_id)).await??;
+        let completed: TurnCompletedNotification =
+            timeout(TIMEOUT, app_server.read_notification("turn/completed")).await??;
+        assert_eq!(completed.thread_id, thread.id);
+        assert_eq!(
+            state.guardian_reviews.load(Ordering::SeqCst),
+            expected_reviews
+        );
+    }
+    app_server.shutdown_gracefully().await?;
+    mcp_server.abort();
+    responses_server.abort();
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn user_approval_skips_async_guardian_without_changing_other_modes() -> Result<()> {
     skip_if_no_network!(Ok(()));
     let state = Arc::new(MockResponsesState {
@@ -2650,12 +2779,12 @@ async fn user_approval_skips_async_guardian_without_changing_other_modes() -> Re
         while tool_results.len() < 3 {
             let completed: ItemCompletedNotification =
                 timeout(TIMEOUT, app_server.read_notification("item/completed")).await??;
-            if let ThreadItem::McpToolCall {
+            if let ThreadItemPayload::McpToolCall {
                 status,
                 result,
                 error,
                 ..
-            } = completed.item
+            } = completed.item.payload
             {
                 tool_results.push((status, result.map(|result| result.content), error));
             }

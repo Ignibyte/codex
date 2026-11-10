@@ -36,7 +36,7 @@ struct Provider {
 }
 
 impl SkillProvider for Provider {
-    fn list(&self, _query: SkillListQuery) -> SkillProviderFuture<'_, SkillCatalog> {
+    fn list<'a>(&'a self, _query: SkillListQuery<'a>) -> SkillProviderFuture<'a, SkillCatalog> {
         Box::pin(async move {
             self.lists.fetch_add(1, Ordering::SeqCst);
             let fail = self.fail_list.swap(false, Ordering::SeqCst);
@@ -94,6 +94,8 @@ fn state() -> SkillsThreadState {
     SkillsThreadState::new(
         SkillsExtensionConfig {
             include_instructions: true,
+            catalog_deltas_enabled: false,
+            omit_descriptions: false,
             max_context_tokens: None,
             bundled_skills_enabled: false,
             cloud_skill_enabled: true,
@@ -110,11 +112,10 @@ fn client() -> Arc<McpResourceClient> {
     ))))
 }
 
-fn query(client: Option<Arc<McpResourceClient>>) -> SkillListQuery {
+fn query(client: Option<Arc<McpResourceClient>>) -> SkillListQuery<'static> {
     SkillListQuery {
         turn_id: "turn".into(),
         executor_roots: Vec::new(),
-        resolved_executor_roots: Vec::new(),
         host_snapshot: None,
         include_host_skills: false,
         include_bundled_skills: false,
