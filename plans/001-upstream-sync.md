@@ -30,3 +30,10 @@ git diff --exit-code e00ce2881 -- WORKFLOW.md AGENTS.md
 ```
 
 Record outputs here; verify the fork-only tree, roles/message-board tests and generated-schema checks before review. Build failures block completion.
+
+## Approval and additions
+Reviewer (Claude owner seat): APPROVED 2026-11-10 11:46 CST.
+
+Owner brief `/tmp/fsm-brief-fork-go.txt`: reconcile all four conflicts so upstream behavior lands and the restored persistent-agent, role and cross-account-message features remain. Regenerate Cargo.lock with Cargo from merged manifests, never hand-edit it. Regenerate the compressed protocol export with `just write-app-server-schema`, never hand-merge it.
+
+Re-run every failing test on pristine upstream `627b5792` in a scratch worktree. A matching upstream failure is pre-existing: record it and proceed; a fork-only failure blocks and must be fixed. If the full workspace run exceeds two hours, report elapsed time and partial results. Once validation is complete, merge this branch into main with `--no-ff`, push origin main and **keep this branch**. No fleet-spec-manager or manager-pane changes.
