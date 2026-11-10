@@ -281,4 +281,4 @@ exit 1
 
 There is no merge-only qualification failure. The mandatory delivery script was run and its unavailable historical fixture was demonstrated on pristine fork main. The skipped legacy, two-account, remote/VM and Forge-dependent checks remain unproved.
 
-Build/test logs were temporary `/tmp/codex-sync-1110-*.log` files; source/package pins, outputs, exceptions and limits are recorded here. Remove only the owned temporary caches/fixtures and clean comparison worktrees after recording. Final merge follows the owner's `--no-ff`, push-origin-main and keep-sync-branch instructions.
+Build/test logs are temporary `/tmp/codex-sync-1110-*.log` files; source/package pins, outputs, exceptions and limits are recorded here. Removed the owned temporary caches/fixtures and both clean comparison worktrees after recording. Final merge follows the owner's `--no-ff`, push-origin-main and keep-sync-branch instructions.
