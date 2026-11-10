@@ -52,6 +52,7 @@ pub use codex_tools::TurnItemEmissionFuture;
 pub use codex_tools::TurnItemEmitter;
 pub use codex_tools::parse_tool_input_schema;
 pub use codex_tools::parse_tool_input_schema_without_compaction;
+pub use contributors::AccessedSelectedCapabilityRoot;
 pub use contributors::ApprovalDecision;
 pub use contributors::ApprovalDecisionInput;
 pub use contributors::ApprovalReviewContributor;
@@ -126,6 +127,7 @@ pub use user_instructions::UserInstructionsProvider;
 pub use contributors::ToolDispatchInput;
 
 mod model_request;
+pub use model_request::GuardianAssessment;
 pub use model_request::ModelRequestContributor;
 pub use model_request::ModelRequestInput;
 pub use model_request::ModelRequestKind;

@@ -689,6 +689,30 @@ impl PermissionProfile {
         }
     }
 
+    /// Returns the historical `sandbox_policy` diagnostic label without constructing
+    /// a legacy policy. Retains native-path compatibility fallbacks rather than
+    /// evaluating executor authorization.
+    pub fn legacy_sandbox_policy_label(&self, cwd: &Path) -> &'static str {
+        match self {
+            Self::Disabled => "danger-full-access",
+            Self::External { .. } => "external-sandbox",
+            Self::Managed { network, .. } => {
+                let file_system = self.file_system_sandbox_policy();
+                if file_system.has_legacy_full_disk_write_access() {
+                    if network.is_enabled() {
+                        "danger-full-access"
+                    } else {
+                        "external-sandbox"
+                    }
+                } else if file_system.has_legacy_write_intent(cwd) {
+                    "workspace-write"
+                } else {
+                    "read-only"
+                }
+            }
+        }
+    }
+
     pub fn to_legacy_sandbox_policy(&self, cwd: &Path) -> io::Result<SandboxPolicy> {
         match self {
             Self::Managed {
@@ -893,7 +917,8 @@ pub enum ContentItem {
         detail: Option<ImageDetail>,
     },
     InputAudio {
-        audio_url: String,
+        #[serde(flatten)]
+        audio: AudioReference,
     },
     OutputText {
         text: String,
@@ -931,6 +956,15 @@ impl ContentItem {
 #[ts(untagged)]
 pub enum ImageReference {
     Inline { image_url: String },
+    File { file_id: String },
+}
+
+/// Inline audio data or an uploaded file loaded by the Responses API.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
+#[serde(untagged)]
+#[ts(untagged)]
+pub enum AudioReference {
+    Inline { audio_url: String },
     File { file_id: String },
 }
 
@@ -999,6 +1033,13 @@ pub struct InternalChatMessageMetadataPassthrough {
     #[schemars(skip)]
     #[ts(skip)]
     pub create_time: Option<serde_json::Number>,
+    /// Native content-token count for this sampled message, including its sampled footer.
+    /// Read from the producer only; do not replay telemetry into subsequent model requests.
+    #[serde_as(deserialize_as = "serde_with::DefaultOnError")]
+    #[serde(default, skip_serializing)]
+    #[schemars(skip)]
+    #[ts(skip)]
+    pub content_token_count: Option<u64>,
     /// Harness-owned classifications aligned with the item's content entries.
     #[serde_as(deserialize_as = "serde_with::DefaultOnError")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1889,6 +1930,28 @@ pub fn is_audio_close_tag_text(text: &str) -> bool {
     text == AUDIO_CLOSE_TAG
 }
 
+/// Whether this text opens a harness label for the adjacent media part.
+pub fn is_opening_media_label(text: &str, media: &ContentItem) -> bool {
+    match media {
+        ContentItem::InputImage { .. } => {
+            is_local_image_open_tag_text(text) || is_image_open_tag_text(text)
+        }
+        ContentItem::InputAudio { .. } => {
+            is_local_audio_open_tag_text(text) || is_audio_open_tag_text(text)
+        }
+        ContentItem::InputText { .. } | ContentItem::OutputText { .. } => false,
+    }
+}
+
+/// Whether this text closes a harness label for the adjacent media part.
+pub fn is_closing_media_label(text: &str, media: &ContentItem) -> bool {
+    match media {
+        ContentItem::InputImage { .. } => is_image_close_tag_text(text),
+        ContentItem::InputAudio { .. } => is_audio_close_tag_text(text),
+        ContentItem::InputText { .. } | ContentItem::OutputText { .. } => false,
+    }
+}
+
 fn invalid_image_error_placeholder(
     path: &std::path::Path,
     error: impl std::fmt::Display,
@@ -1982,7 +2045,9 @@ fn local_audio_content_items(
             text: local_audio_open_tag_text_with_path(label_number, path),
         },
         ContentItem::InputAudio {
-            audio_url: data_url_from_bytes(mime, file_bytes),
+            audio: AudioReference::Inline {
+                audio_url: data_url_from_bytes(mime, file_bytes),
+            },
         },
         ContentItem::InputText {
             text: LOCAL_AUDIO_CLOSE_TAG.to_string(),
@@ -2199,9 +2264,9 @@ impl ResponseInputItem {
                         )],
                     }
                 }
-                UserInput::Audio { audio_url } => {
+                UserInput::Audio { audio } => {
                     audio_index += 1;
-                    vec![ContentItem::InputAudio { audio_url }]
+                    vec![ContentItem::InputAudio { audio }]
                 }
                 UserInput::LocalAudio { path } => {
                     audio_index += 1;
@@ -2277,7 +2342,12 @@ impl From<ContentItem> for FunctionCallOutputContentItem {
                 Self::InputText { text }
             }
             ContentItem::InputImage { image, detail } => Self::InputImage { image, detail },
-            ContentItem::InputAudio { audio_url } => Self::InputAudio { audio_url },
+            ContentItem::InputAudio {
+                audio: AudioReference::Inline { audio_url },
+            } => Self::InputAudio { audio_url },
+            ContentItem::InputAudio {
+                audio: AudioReference::File { file_id, .. },
+            } => Self::InputText { text: file_id },
         }
     }
 }
@@ -4147,34 +4217,47 @@ mod tests {
 
     #[test]
     fn serializes_audio_user_input_without_tags() -> Result<()> {
-        let audio_url = "data:audio/wav;base64,abc".to_string();
-
-        let item = ResponseInputItem::from(vec![UserInput::Audio {
-            audio_url: audio_url.clone(),
-        }]);
-
-        assert_eq!(
-            item,
-            ResponseInputItem::Message {
-                role: "user".to_string(),
-                content: vec![ContentItem::InputAudio { audio_url }],
-                phase: None,
-            }
-        );
-        assert_eq!(
-            serde_json::to_value(item)?,
-            serde_json::json!({
-                "type": "message",
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_audio",
-                        "audio_url": "data:audio/wav;base64,abc",
-                    },
-                ],
-            })
-        );
-
+        for (audio, wire) in [
+            (
+                AudioReference::Inline {
+                    audio_url: "data:audio/wav;base64,abc".into(),
+                },
+                serde_json::json!({"type": "input_audio", "audio_url": "data:audio/wav;base64,abc"}),
+            ),
+            (
+                AudioReference::File {
+                    file_id: "file_audio".into(),
+                },
+                serde_json::json!({"type": "input_audio", "file_id": "file_audio"}),
+            ),
+        ] {
+            let input = UserInput::Audio {
+                audio: audio.clone(),
+            };
+            assert_eq!(
+                serde_json::from_value::<UserInput>(serde_json::to_value(&input)?)?,
+                input
+            );
+            let item = ResponseInputItem::from(vec![input]);
+            assert_eq!(
+                item,
+                ResponseInputItem::Message {
+                    role: "user".into(),
+                    content: vec![ContentItem::InputAudio { audio }],
+                    phase: None,
+                }
+            );
+            assert_eq!(
+                serde_json::to_value(&item)?,
+                serde_json::json!({
+                    "type": "message", "role": "user", "content": [wire],
+                })
+            );
+            assert_eq!(
+                serde_json::from_value::<ResponseInputItem>(serde_json::to_value(&item)?)?,
+                item
+            );
+        }
         Ok(())
     }
 
@@ -4207,7 +4290,9 @@ mod tests {
                             ),
                         },
                         ContentItem::InputAudio {
-                            audio_url: format!("data:{mime};base64,YXVkaW8="),
+                            audio: AudioReference::Inline {
+                                audio_url: format!("data:{mime};base64,YXVkaW8=")
+                            },
                         },
                         ContentItem::InputText {
                             text: audio_close_tag_text(),
@@ -4583,7 +4668,9 @@ mod tests {
 
         let item = ResponseInputItem::from(vec![
             UserInput::Audio {
-                audio_url: audio_url.clone(),
+                audio: AudioReference::Inline {
+                    audio_url: audio_url.clone(),
+                },
             },
             UserInput::LocalAudio {
                 path: local_path.clone(),
@@ -4595,7 +4682,9 @@ mod tests {
             ResponseInputItem::Message {
                 role: "user".to_string(),
                 content: vec![
-                    ContentItem::InputAudio { audio_url },
+                    ContentItem::InputAudio {
+                        audio: AudioReference::Inline { audio_url }
+                    },
                     ContentItem::InputText {
                         text: local_audio_open_tag_text_with_path(
                             /*label_number*/ 2,
@@ -4603,7 +4692,9 @@ mod tests {
                         ),
                     },
                     ContentItem::InputAudio {
-                        audio_url: "data:audio/mpeg;base64,YXVkaW8=".to_string(),
+                        audio: AudioReference::Inline {
+                            audio_url: "data:audio/mpeg;base64,YXVkaW8=".to_string()
+                        }
                     },
                     ContentItem::InputText {
                         text: audio_close_tag_text(),

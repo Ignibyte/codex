@@ -129,10 +129,11 @@ pub(crate) use super::approvals::ApprovalAction;
 pub(crate) struct PermissionRequestPayload {
     pub tool_name: HookToolName,
     pub tool_input: serde_json::Value,
+    pub tool_cwd: Option<PathUri>,
 }
 
 impl PermissionRequestPayload {
-    pub(crate) fn bash(command: String, description: Option<String>) -> Self {
+    pub(crate) fn bash(command: String, description: Option<String>, cwd: PathUri) -> Self {
         let mut tool_input = serde_json::Map::new();
         tool_input.insert("command".to_string(), serde_json::Value::String(command));
         if let Some(description) = description {
@@ -145,6 +146,7 @@ impl PermissionRequestPayload {
         Self {
             tool_name: HookToolName::bash(),
             tool_input: serde_json::Value::Object(tool_input),
+            tool_cwd: Some(cwd),
         }
     }
 }
@@ -168,6 +170,8 @@ pub(crate) enum ExecApprovalRequirement {
         /// See core/src/exec_policy.rs for more details on how proposed_execpolicy_amendment is determined.
         proposed_execpolicy_amendment: Option<ExecPolicyAmendment>,
     },
+    /// A fresh human decision is required for each execution attempt.
+    NeedsHumanApproval { reason: Option<String> },
     /// Execution forbidden for this tool call.
     Forbidden { reason: String },
 }
@@ -500,6 +504,7 @@ impl<'a> SandboxAttempt<'a> {
             .transform(SandboxTransformRequest {
                 command,
                 permissions: self.permissions,
+                workspace_roots: None,
                 sandbox: self.sandbox,
                 enforce_managed_network: self.enforce_managed_network,
                 environment_id,
@@ -508,8 +513,8 @@ impl<'a> SandboxAttempt<'a> {
                 sandbox_exe: self.sandbox_exe.map(std::path::PathBuf::as_path),
                 use_legacy_landlock: self.use_legacy_landlock,
                 windows_sandbox_level: self.windows_sandbox_level,
-            })
-            .map_err(CodexErr::from)?;
+            })?
+            .into_command_request();
         request.sandbox_override = self.sandbox_override;
         let workspace_roots = self
             .workspace_roots
@@ -535,6 +540,7 @@ impl<'a> SandboxAttempt<'a> {
             .transform(SandboxTransformRequest {
                 command,
                 permissions: self.permissions,
+                workspace_roots: None,
                 // The exec-server must receive the native command, not this host's wrapper.
                 sandbox: SandboxType::None,
                 enforce_managed_network: self.enforce_managed_network,
@@ -544,8 +550,8 @@ impl<'a> SandboxAttempt<'a> {
                 sandbox_exe: None,
                 use_legacy_landlock: self.use_legacy_landlock,
                 windows_sandbox_level: self.windows_sandbox_level,
-            })
-            .map_err(CodexErr::from)?;
+            })?
+            .into_command_request();
         request.sandbox_override = self.sandbox_override;
         let mut exec_request =
             crate::sandboxing::ExecRequest::from_sandbox_exec_request(request, options, Vec::new())

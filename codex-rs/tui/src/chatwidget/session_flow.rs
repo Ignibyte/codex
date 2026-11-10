@@ -124,7 +124,11 @@ impl ChatWidget {
             self.review.recent_auto_review_denials = RecentAutoReviewDenials::default();
             self.clear_thread_usage_state();
         }
+        let has_turn_history =
+            previous_thread_id == self.thread_id && self.turn_lifecycle.has_turn_history;
         self.turn_lifecycle.reset_thread();
+        self.turn_lifecycle.has_turn_history = has_turn_history;
+        self.safety_recourse = None;
         self.clear_safety_buffering();
         self.thread_name = session.thread_name.clone();
         self.current_goal_status_indicator = None;
@@ -135,6 +139,11 @@ impl ChatWidget {
         self.current_cwd = Some(session.cwd.to_path_buf());
         self.config.cwd = session.cwd.clone();
         self.config.model_provider_id = session.model_provider_id.clone();
+        if previous_thread_id.is_none()
+            && let Some(event) = crate::app::provider::refresh_list_if_present(self)
+        {
+            self.app_event_tx.send(AppEvent::Provider(event));
+        }
         self.set_daybreak_enabled(self.daybreak_enabled);
         if connector_scope_changed {
             self.invalidate_connector_scope();
@@ -342,6 +351,7 @@ impl ChatWidget {
         retained_turns: &[Turn],
     ) {
         self.current_rollout_path = rollout_path;
+        self.clear_background_terminals();
         self.input_queue.clear();
         self.reset_realtime_conversation();
         // Finish any output not yet drained from the old runtime without live completion actions.
@@ -355,8 +365,8 @@ impl ChatWidget {
         self.transcript.reset_turn_flags();
         for turn in retained_turns {
             let mut replaying_delegation = false;
-            for item in &turn.items {
-                if matches!(item, ThreadItem::UserMessage { content, .. }
+            for item in turn.item_payloads() {
+                if matches!(item, ThreadItemPayload::UserMessage { content, .. }
                     if realtime::realtime_delegation_input(content).is_some())
                 {
                     replaying_delegation = true;
@@ -365,11 +375,11 @@ impl ChatWidget {
                     continue;
                 }
                 let (markdown, source) = match item {
-                    ThreadItem::AgentMessage { text, .. } => (
+                    ThreadItemPayload::AgentMessage { text, .. } => (
                         parse_assistant_markdown(text, self.config.cwd.as_path()).visible_markdown,
                         text,
                     ),
-                    ThreadItem::Plan { text, .. } => (text.clone(), text),
+                    ThreadItemPayload::Plan { text, .. } => (text.clone(), text),
                     _ => continue,
                 };
                 if !markdown.trim().is_empty() {

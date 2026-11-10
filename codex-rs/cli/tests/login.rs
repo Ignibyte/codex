@@ -84,6 +84,16 @@ fn login_with_api_key_reads_stdin_and_writes_auth_json() -> Result<()> {
     Authentication is checked when you send a request.
     ");
 
+    for args in [vec!["login"], vec!["login", "--device-auth"]] {
+        codex_command(codex_home.path())?
+            .args(["-c", "forced_login_method=\"api\""])
+            .args(args)
+            .assert()
+            .failure()
+            .stderr(contains("ChatGPT login is disabled"));
+        assert_eq!(read_auth_json(codex_home.path())?, auth);
+    }
+
     Ok(())
 }
 
@@ -145,14 +155,23 @@ fn login_status_validates_configured_workload_identity() -> Result<()> {
     write_file_auth_config(codex_home.path())?;
     let missing_assertion = codex_home.path().join("missing-identity-token");
 
-    codex_command(codex_home.path())?
-        .env_remove(CODEX_ACCESS_TOKEN_ENV_VAR)
-        .env(OPENAI_FEDERATION_RULE_ID_ENV_VAR, "rule-test")
-        .env(OPENAI_IDENTITY_TOKEN_FILE_ENV_VAR, &missing_assertion)
-        .args(["login", "status"])
-        .assert()
-        .failure()
-        .stderr(contains("could not read workload identity assertion file"));
+    for login_method in ["chatgpt", "api"] {
+        let mut command = codex_command(codex_home.path())?;
+        command
+            .env_remove(CODEX_ACCESS_TOKEN_ENV_VAR)
+            .env(OPENAI_IDENTITY_TOKEN_FILE_ENV_VAR, &missing_assertion)
+            .env(OPENAI_FEDERATION_RULE_ID_ENV_VAR, "rule-test")
+            .args([
+                "-c",
+                &format!("forced_login_method=\"{login_method}\""),
+                "login",
+                "status",
+            ]);
+        command
+            .assert()
+            .failure()
+            .stderr(contains("could not read workload identity assertion file"));
+    }
 
     Ok(())
 }
