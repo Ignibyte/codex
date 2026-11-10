@@ -74,3 +74,9 @@ PASS: no unresolved merge entries
 Pre-existing whitespace: `git diff --cached --check` and pristine upstream's `git diff --check 970111f6cb62cc02fe36a82ea7d71b37a2889c97 HEAD` both return 2 with the same **33 path/line/message diagnostics across eight files**. All eight blobs equal upstream: the skills-toggle pasted-search and resume-picker TUI snapshots; `patches/llvm_mingw_import_warnings.patch`, `patches/notify_windows_idle.patch`, `patches/rules_rs_bindgen_v0_0_4.patch`, `patches/rules_rust_declared_msvc_linker.patch`, `third_party/v8/abseil_lifetime_capture.patch`, `third_party/v8/v8_windows_snapshot_wine.patch`. Preserve upstream patch/snapshot bytes; this is an approved pre-existing exception, not a fork regression. Ordinary unstaged `git diff --check` passes.
 
 Workspace tests and remaining checks: pending; no main merge or push until they finish under the owner's failure-comparison rule.
+
+## Additional approved proof — mailbox qualification
+
+Owner brief `/tmp/fsm-brief-qualify.txt`, 2026-11-10 12:58 CST: AFTER workspace tests and before the main merge, run `scripts/factory/qualify_delivery.py`; run the scripted non-interactive `qualify_two_logins.py` mode if available without a real second login, otherwise record that requirement and skip sign-in. Run every other existing `qualify_*.py` that needs no live login, no network beyond localhost and no live Forge write. List each as PASS, FAIL or SKIPPED with its reason. Use isolated temporary fixtures required by these existing tests and keep the permanent record in this plan.
+
+Qualification failures compare against pristine **fork main `e00ce2881`**, not upstream: matching baseline failures are pre-existing and do not block; merge-only failures must be fixed. Retain the original upstream-baseline rule for workspace tests. Merge/push only after both sets of checks; keep the sync branch. Finish with `FORK QUALIFIED <sha>`.
