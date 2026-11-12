@@ -186,7 +186,7 @@ mod tests {
                     history_mode: ThreadHistoryMode::Legacy,
                     history_base: None,
                     subagent_history_start_ordinal: None,
-                    initial_window_id: ContextWindowId::new_uuid_v7().to_string(),
+                    initial_window_id: ContextWindowId::new_uuid_v7(),
                     runtime_workspace_roots: None,
                     metadata: ThreadPersistenceMetadata {
                         cwd: None,
@@ -463,7 +463,7 @@ mod tests {
             history_mode,
             history_base: None,
             subagent_history_start_ordinal: None,
-            initial_window_id: ContextWindowId::new_uuid_v7().to_string(),
+            initial_window_id: ContextWindowId::new_uuid_v7(),
             runtime_workspace_roots: None,
             metadata: thread_metadata(),
         }
@@ -665,16 +665,22 @@ impl InMemoryThreadStore {
         }
         let mut state = self.state.lock().await;
         let history_mode = history_mode_from_state(&state, params.thread_id);
-        let persisted_items = into_persisted_rollout_items(params.items, history_mode);
+        let mut persisted_items = into_persisted_rollout_items(params.items, history_mode);
         if persisted_items.is_empty() {
             return Ok(());
         }
         state.calls.append_items += 1;
-        state
-            .histories
-            .entry(params.thread_id)
-            .or_default()
-            .extend(persisted_items);
+        let history = state.histories.entry(params.thread_id).or_default();
+        if persisted_items
+            .iter()
+            .any(|item| matches!(item, RolloutItem::Compacted(_)))
+        {
+            codex_rollout::stamp_item_ordinals(
+                codex_rollout::next_model_id_ordinals(history).0,
+                &mut persisted_items,
+            );
+        }
+        history.extend(persisted_items);
         Ok(())
     }
 

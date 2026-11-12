@@ -253,6 +253,7 @@ pub(crate) mod async_compaction;
 pub(crate) mod file_audio;
 pub(crate) use file_audio::FileAudioDurations;
 
+mod approved_plan;
 mod code_mode_warning;
 mod config_refresh;
 pub(crate) mod context_window;
@@ -273,6 +274,7 @@ mod mcp_prewarm;
 mod mcp_refresh;
 mod mcp_runtime;
 mod model_catalog_settings;
+mod model_ids;
 pub(crate) mod multi_agents;
 mod plugin_selection;
 mod realtime_history;
@@ -600,6 +602,21 @@ pub(crate) fn assign_missing_item_id(
 }
 
 impl Session {
+    fn compaction_resume_metadata(&self, state: &SessionState) -> CompactionResumeMetadata {
+        CompactionResumeMetadata {
+            next_item_ordinal: None,
+            rejected_audio_file_ids: state.history.rejected_audio_file_ids(),
+            dynamic_tools: Some(Box::new(DynamicToolsSnapshot {
+                thread_id: self.thread_id(),
+                tools: state.persisted_dynamic_tools.to_vec(),
+            })),
+            multi_agent_version: self.multi_agent_version(),
+            last_started_turn_id: state.last_started_turn_id.clone(),
+            turn_attribution: state.turn_attribution.clone(),
+            previous_turn_settings: state.previous_turn_settings(),
+        }
+    }
+
     pub(crate) async fn resolve_startup_model(
         models_manager: &dyn ModelsManager,
         config: &Config,
@@ -2152,6 +2169,8 @@ impl Session {
     ///
     /// The predicate must be fast and side-effect-free. It must not block, acquire
     /// other locks, or call back into `Session`.
+    ///
+    /// Returns any host receipt for the caller to await when it needs acknowledgment.
     async fn update_settings_if(
         &self,
         updates: SessionSettingsUpdate,
@@ -2159,7 +2178,6 @@ impl Session {
     ) -> ConstraintResult<Option<SessionSettingsCommit>> {
         let notify_config_contributors = !self.services.extensions.config_contributors().is_empty();
         let windows_sandbox_changed;
-        let mut tier_acceptance = None;
         let (
             commit,
             previous_config,
@@ -2223,7 +2241,17 @@ impl Session {
                     .update_configured_selections(&updated.environments);
             }
             state.session_configuration = updated;
-            if root_service_tier_changed && !state.shared_service_tier_pending {
+            let explicit_service_tier = updates.step_settings.service_tier.is_some();
+            let retry_failed_handoff = updates.host_acceptance_in_reply
+                && explicit_service_tier
+                && state
+                    .service_tier_acceptance
+                    .as_ref()
+                    .and_then(futures::future::Shared::peek)
+                    .is_some_and(Result::is_err);
+            if (root_service_tier_changed || retry_failed_handoff)
+                && !state.shared_service_tier_pending
+            {
                 state.service_tier_acceptance = crate::agent::host::propagate_config_update(
                     self,
                     AgentConfigUpdate::ServiceTier(
@@ -2235,9 +2263,11 @@ impl Session {
                     ),
                 );
             }
-            if root_service_tier_changed || updates.step_settings.service_tier.is_some() {
-                tier_acceptance = state.service_tier_acceptance.clone();
-            }
+            let host_acceptance = if root_service_tier_changed || explicit_service_tier {
+                state.service_tier_acceptance.clone()
+            } else {
+                None
+            };
             let new_config = notify_config_contributors
                 .then(|| self.build_effective_session_config(&state.session_configuration));
             let commit = SessionSettingsCommit {
@@ -2245,6 +2275,7 @@ impl Session {
                 snapshot: state
                     .session_configuration
                     .thread_settings_snapshot(&state.session_configuration.environments),
+                host_acceptance,
             };
             (
                 commit,
@@ -2279,9 +2310,6 @@ impl Session {
         }
         if mcp_inputs_changed {
             self.schedule_mcp_prewarm();
-        }
-        if let Some(accepted) = tier_acceptance {
-            accepted.await;
         }
         Ok(Some(commit))
     }
@@ -2459,6 +2487,18 @@ impl Session {
             configuration.windows_sandbox_level,
             environments,
             reasoning_effort_pin,
+        )
+    }
+
+    pub(crate) async fn thread_ready_config(
+        &self,
+    ) -> (Arc<Config>, HistoryInitialization, ThreadHistoryMode) {
+        let state = self.state.lock().await;
+        let config = &state.session_configuration;
+        (
+            Arc::clone(&config.original_config_do_not_use),
+            self.history_initialization,
+            config.history_mode,
         )
     }
 
@@ -4929,25 +4969,12 @@ impl Session {
                 retained_context: Some(state.history.retained_context().clone()),
                 mcp_resource_origins: self.services.mcp_runtime.resource_origin_checkpoint(),
                 window_number: Some(metadata.window_number),
-                first_window_id: Some(metadata.window_ids.first_window_id.to_string()),
-                previous_window_id: metadata
-                    .window_ids
-                    .previous_window_id
-                    .map(|id| id.to_string()),
-                window_id: Some(metadata.window_ids.window_id.to_string()),
+                first_window_id: Some(metadata.window_ids.first_window_id),
+                previous_window_id: metadata.window_ids.previous_window_id,
+                window_id: Some(metadata.window_ids.window_id),
                 compaction_response_id: metadata.compaction_response_id,
                 latest_token_usage_record: state.latest_token_usage_record.clone(),
-                resume_metadata: Some(CompactionResumeMetadata {
-                    rejected_audio_file_ids: state.history.rejected_audio_file_ids(),
-                    dynamic_tools: Some(Box::new(DynamicToolsSnapshot {
-                        thread_id: self.thread_id(),
-                        tools: state.persisted_dynamic_tools.to_vec(),
-                    })),
-                    multi_agent_version: self.multi_agent_version(),
-                    last_started_turn_id: state.last_started_turn_id.clone(),
-                    turn_attribution: state.turn_attribution.clone(),
-                    previous_turn_settings: state.previous_turn_settings(),
-                }),
+                resume_metadata: Some(self.compaction_resume_metadata(&state)),
             };
             (compacted_item, started_item)
         };
