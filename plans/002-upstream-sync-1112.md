@@ -319,3 +319,20 @@ $ git diff --check
 Frozen `dist/1112` verification PASS: all five file hashes, sizes, modes and modification times are unchanged. The follow-up diff names only its five allowed tracked files. Documentation updates do not change the tested Rust tree. No main merge or push of this follow-up has occurred; final owner **APPROVED** remains required.
 
 Cleanup PASS: removed `/srv/stacks/codex-version-tmp-1112b`, including its private credential copy and fixture output, after recording results. Zero task namespace processes remained. Deleted nothing outside that directory; the host `/tmp` remains its original tmpfs.
+
+### Subsequent setup brief — blocked on the requested UID layout
+
+Read `/tmp/fork-brief-setup.txt`, `/tmp/fsm-bridge-protocol.md`, and `/tmp/fsm-bridge.routes.json.example` in full. The setup correction places spec-manager and foreman-bot on Forge and pilot-seat on dev-3, with all sessions and the requested bridge/proxy under `ai`. Source inspection and two disposable probes against the new production bridge establish a concrete conflict with that requested layout:
+
+```text
+$ codex-factory-bridge bootstrap --state <private-temp>/service --grant <private-temp>/grant.json --output <private-temp>/bootstrap
+# grant.agentUid equals the bridge operator's effective UID
+exit 1: Error: agent_service_uid_boundary
+$ codex-factory-bridge connect-host --state <private-temp>/proxy --socket <private-temp>/remote.sock --config <private-temp>/proxy.json
+# allowedAgentUids contains the proxy's own effective UID
+exit 1: Error: network_agent_uid_invalid
+```
+
+`codex-rs/factory/src/service.rs:836` requires a local seat UID different from the service UID; the remote bootstrap also requires the remote seat UID to differ from its admitted proxy UID at line 863. `codex-rs/factory/src/network.rs:142` rejects allowed endpoint UIDs equal to the proxy UID. These are intentional existing boundaries, not missing shell arguments. In addition, `codex-rs/app-server/src/request_processors/factory.rs:65` requires service-owned binding files: a distinct-UID endpoint cannot read a mode-0600 service-owned file. Existing native fixtures use mode 0640 with a readable group, while credentials remain 0600.
+
+Neither probe created a registry, service key, credential, listener, or network connection. Removed only its disposable `/srv/stacks/codex-setup-probe-*` directory. No live host was contacted. Per AGENTS.md's instruction to stop and ask when stuck, setup implementation and plan 003 are paused for an owner decision: use the existing separate-UID service/proxy contract (including appropriate binding readability), or explicitly scope/approve a runtime change for trusted shared-UID operation. The requested tested setup runbook is not yet complete, and no setup-ready marker is claimed. The completed version-fix artifact and its proof remain ready for the separately required merge approval.
