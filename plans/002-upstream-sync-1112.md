@@ -1,6 +1,6 @@
 # Plan 002: upstream sync, 2026-11-12
 
-**Status:** Final owner-seat review APPROVED; merge/push authorized. The 14 upstream-owned results remain listed as failures, not waived.
+**Status:** Upstream sync merged and pushed as `163ad7adcf2145656c8d0bb13191731993f7047c`. The owner approved the release-version follow-up merge in `/tmp/fork-brief-uid.txt` (2026-11-12 10:58 CST). The 14 upstream-owned results remain listed as failures, not waived.
 
 **Goal:** Bring in the latest upstream Codex changes while preserving persistent agents, roles, and authenticated cross-account mailbox communication.
 
@@ -244,3 +244,101 @@ At final proof capture, main was `7d1a35a7b98ad50d7fdd9215f406b430914b11b9` and 
 Owner seat: **APPROVED**, in the owner's place (rows `9b02c08b`, `a9921e09`). All 14 failures reproduce on pinned upstream `c0cc9fc820`; none is in the fork's factory code. They stay listed as failures in this plan, **not waived**. The owner seat explicitly directed merging `sync/upstream-1112` into main with `--no-ff` and pushing `origin main`.
 
 `dist/1112` is frozen at the reviewed bytes and metadata by explicit owner instruction. Its pre-approval manifest remains unchanged; this plan records the later approval. Before merge, origin/main still equals original main `7d1a35a7b98ad50d7fdd9215f406b430914b11b9`, runtime source still matches tested `2551c9e970`, and AGENTS.md/WORKFLOW.md remain unchanged. The only change after the reviewed head `c472499d3e` is this approval record and status update. No tests are reclassified as passed.
+
+## Urgent release-version follow-up, 2026-11-12
+
+**Authorization/status:** The owner's `/tmp/fork-brief-version.txt` explicitly authorizes this small plan-002 follow-up before plan 003, without a new plan. Implementation is authorized; a new owner **APPROVED** is required before its `--no-ff` main merge. Branch: `plan/002-release-version`, from main `163ad7adcf2145656c8d0bb13191731993f7047c`.
+
+**Goal / smallest version:** Replace the development version `0.0.0` with `0.167.2+ignibyte.1112b`, rebuild the release pair into `dist/1112b`, and prove GPT-6.1 Terra access. Upstream's `rust-v0.167.2` tag (2026-11-11 20:03:57 UTC; commit `ce21072c90d32c40af7a55b60b2fb35c84a43a6a`) predates pinned upstream `c0cc9fc820` (2026-11-12 05:21:30 UTC). Its release commit changes only the workspace version. `.github/workflows/rust-release.yml:34` requires the tag and Cargo version to agree, and line 610 explains refreshing workspace versions in the lockfile with `cargo update --workspace`. Use this stable release base, with fork build metadata. `models-manager/src/lib.rs:24` sends only major/minor/patch to model discovery/cache, so that path reports `0.167.2` while `--version` identifies the fork. The live proof will check backend acceptance.
+
+**Files:** Only `codex-rs/Cargo.toml`, Cargo-regenerated `codex-rs/Cargo.lock`, this plan, `docs/fork-mailbox.md`, and one additional plan-002 line in `CHANGELOG-FORK.md`. Ignored artifacts: `dist/1112b/{codex,codex-factory-bridge,MANIFEST.json,SHA256SUMS,INTERFACE.md}`. Leave all bytes and metadata in `dist/1112` unchanged. No runtime source, deployment, new subsystem, full workspace rerun, or plan-003 work. The 14 recorded upstream-owned failures remain failures.
+
+**Proof:** Use Rust 1.95.0, eight build jobs, the same GNU target and factory feature as the original release. Build both release executables with `CODEX_FACTORY_REVISION=<source commit>` and `cargo build --locked --release --target x86_64-unknown-linux-gnu --target-dir target/1112b-release -p codex-cli -p codex-factory --features codex-install-context/factory --bin codex --bin codex-factory-bridge`. Build the separate fault pair as before, using `--profile dev-small`, `target/1112b-faults`, and the two fixture-fault features. Run all seven existing mailbox qualifiers listed above against the corresponding new binaries, both `--version` commands, factory-info, artifact checksums, and `git diff --check`. Per the owner's explicit override, do not repeat workspace tests. Use isolated NVMe temporary storage, a private `/tmp` mount for existing fixtures, and delete only the task's temporary directory after recording results.
+
+For the live proof, use the available normal z690 ChatGPT credential record through a private, mode-0700 `CODEX_HOME`; never print or alter the owner's credentials/config/cache. Run one tiny `codex exec --sandbox read-only --skip-git-repo-check -c 'model="gpt-6.1-terra"' -c 'model_reasoning_effort="high"'` turn from a disposable directory, asking for a fixed reply and no tools. Record completion and the fetched numeric cache version/model availability without credential or account output. If the login is unusable, report the exact limitation for the owner's Forge proof. Document a dedicated fork `CODEX_HOME` for plan 003 so stock and fork caches/settings/sessions are separate.
+
+**Final gate:** Record actual results and the tested source commit here; present the artifact path and branch for review, then print `FORK VERSION FIX READY /srv/stacks/codex/dist/1112b`. Merge only after a new owner **APPROVED**. Read the setup brief in full after the version fix, before resuming plan 003.
+
+### Release-version proof result
+
+Tested source: **`6cb7fd718329da87bfd1dcf4c10536cf82b1c367`**. Both builds used eight jobs, Rust/Cargo 1.95.0, the same checksum-verified V8 archive/bindings and GNU target as the original sync. `cargo update --workspace --offline` stamped 175 workspace packages; a parsed comparison confirmed all external package records are unchanged. The highest stable remote `rust-v*` tag is `rust-v0.167.2`; newer 0.168/0.169 tags are prereleases. Build metadata remains visible in the CLI, and the live backend accepts it.
+
+```text
+$ cargo build --locked --release --target x86_64-unknown-linux-gnu --target-dir target/1112b-release -p codex-cli -p codex-factory --features codex-install-context/factory --bin codex --bin codex-factory-bridge
+Finished release profile [optimized + debuginfo] in 13m 18s
+exit 0; 798.28s
+$ # Matching fault build: --profile dev-small, target/1112b-faults,
+$ # features codex-install-context/factory,codex-app-server/factory-fixture-faults,codex-factory/fixture-faults; CARGO_INCREMENTAL=0
+Finished dev-small profile [unoptimized] in 2m 28s
+exit 0; 148.39s
+$ dist/1112b/codex --version
+codex-cli 0.167.2+ignibyte.1112b
+$ dist/1112b/codex-factory-bridge --version
+codex-factory 0.167.2+ignibyte.1112b
+```
+
+Factory-info reports `ignibyte-codex-factory`, revision `6cb7fd718329da87bfd1dcf4c10536cf82b1c367`, version `0.167.2+ignibyte.1112b`, and `publicUpdatesAllowed=false`. The new manifest records actual ELF dependencies, source/tree identities, versions, hashes, qualification and live-proof results. Both binaries still require GLIBC_2.39 and OPENSSL_3.0.0; the CLI also requires libbz2.so.1.0. No installation or remote-host proof is claimed.
+
+All seven existing qualifier commands were rerun as specified above, with production paths replaced by `dist/1112b` and fault paths by `target/1112b-faults/x86_64-unknown-linux-gnu/dev-small`. A private mount namespace bound `/srv/stacks/codex-version-tmp-1112b/mount-tmp` at its own `/tmp`, with TMPDIR=/tmp and isolated HOME/XDG/Git settings. Fixture UIDs remained separated. Results:
+
+| Qualifier | Variant | Output / exit / elapsed |
+| --- | --- | --- |
+| contract | production | passed=true; 64 checks; 0; 0.21s |
+| credentials | production | passed=true; 7 checks; 0; 5.96s |
+| recovery | production | passed=true; 9 checks; 0; 20.30s |
+| native | production | passed=true; 5 checks; 0; 2.15s |
+| lifecycle | production | passed=true; 4 checks; 0; 2.24s |
+| durability | fault-injection | passed=true; 7 checks; 0; 1.69s |
+| reconciliation | fault-injection | passed=true; 5 crash lanes; 0; 10.62s |
+
+All 96 counted checks and all five reconciliation lanes pass. Per the owner's explicit instruction, no full workspace/doc/GitHub suite rerun was performed for this version-only follow-up. The original 14 upstream-owned workspace failures remain **failures**, not waived.
+
+The z690 live proof used the available normal ChatGPT credential record through a private mode-0700 CODEX_HOME and mode-0600 credential copy, with no owner config copied. The command used `CODEX_HOME=<private home>` and:
+
+```sh
+/srv/stacks/codex/dist/1112b/codex exec --sandbox read-only --skip-git-repo-check --ephemeral --ignore-user-config --json -c 'model="gpt-6.1-terra"' -c 'model_reasoning_effort="high"' -c 'cli_auth_credentials_store="file"' 'Reply with exactly FORK_VERSION_OK. Do not use any tools or access any files.'
+```
+
+Output: `turn.completed`; final reply `FORK_VERSION_OK`; **exit 0; 3.77s; zero tool calls**. The fetched private cache has `client_version="0.167.2"` and contains both `gpt-6.1-terra` and `gpt-6.1-sol`. Before/after hashes of the owner's auth.json, config.toml and models_cache.json are unchanged. One nonfatal diagnostic reported that `codex-code-mode-host` is absent from the requested two-binary package; the read-only model turn completed successfully. This proof does not qualify code-mode tool execution. Carry that packaging fact into subsequent setup/spec planning; no extra helper or runtime change is included here.
+
+SHA-256: `codex` = `96cde4cac686d8f297fa6ebdc43fc2610a1a535ed1f63497d94e2a09e8da62e1`; `codex-factory-bridge` = `04eb9ac93dd83a9b51a1e414bd50db53d56cd7050ff2cdfb4624f2cff17ecc64`.
+
+```text
+$ cd dist/1112b && sha256sum -c SHA256SUMS
+codex: OK
+codex-factory-bridge: OK
+INTERFACE.md: OK
+MANIFEST.json: OK
+exit 0
+$ git diff --exit-code 6cb7fd7183 -- codex-rs
+(no output; exit 0)
+$ git diff --check
+(no output; exit 0)
+```
+
+Frozen `dist/1112` verification PASS: all five file hashes, sizes, modes and modification times are unchanged. The follow-up diff names only its five allowed tracked files. Documentation updates do not change the tested Rust tree. No main merge or push of this follow-up has occurred; final owner **APPROVED** remains required.
+
+Cleanup PASS: removed `/srv/stacks/codex-version-tmp-1112b`, including its private credential copy and fixture output, after recording results. Zero task namespace processes remained. Deleted nothing outside that directory; the host `/tmp` remains its original tmpfs.
+
+### Subsequent setup brief — blocked on the requested UID layout
+
+Read `/tmp/fork-brief-setup.txt`, `/tmp/fsm-bridge-protocol.md`, and `/tmp/fsm-bridge.routes.json.example` in full. The setup correction places spec-manager and foreman-bot on Forge and pilot-seat on dev-3, with all sessions and the requested bridge/proxy under `ai`. Source inspection and two disposable probes against the new production bridge establish a concrete conflict with that requested layout:
+
+```text
+$ codex-factory-bridge bootstrap --state <private-temp>/service --grant <private-temp>/grant.json --output <private-temp>/bootstrap
+# grant.agentUid equals the bridge operator's effective UID
+exit 1: Error: agent_service_uid_boundary
+$ codex-factory-bridge connect-host --state <private-temp>/proxy --socket <private-temp>/remote.sock --config <private-temp>/proxy.json
+# allowedAgentUids contains the proxy's own effective UID
+exit 1: Error: network_agent_uid_invalid
+```
+
+`codex-rs/factory/src/service.rs:836` requires a local seat UID different from the service UID; the remote bootstrap also requires the remote seat UID to differ from its admitted proxy UID at line 863. `codex-rs/factory/src/network.rs:142` rejects allowed endpoint UIDs equal to the proxy UID. These are intentional existing boundaries, not missing shell arguments. In addition, `codex-rs/app-server/src/request_processors/factory.rs:65` requires service-owned binding files: a distinct-UID endpoint cannot read a mode-0600 service-owned file. Existing native fixtures use mode 0640 with a readable group, while credentials remain 0600.
+
+Neither probe created a registry, service key, credential, listener, or network connection. Removed only its disposable `/srv/stacks/codex-setup-probe-*` directory. No live host was contacted. Per AGENTS.md's instruction to stop and ask when stuck, setup implementation and plan 003 are paused for an owner decision: use the existing separate-UID service/proxy contract (including appropriate binding readability), or explicitly scope/approve a runtime change for trusted shared-UID operation. The requested tested setup runbook is not yet complete, and no setup-ready marker is claimed. The completed version-fix artifact and its proof remain ready for the separately required merge approval.
+
+### Owner approval and UID decision, 2026-11-12 10:58 CST
+
+The owner explicitly **APPROVED** the version fix in `/tmp/fork-brief-uid.txt`: merge with `--no-ff`, push main, and print `FORK VERSION MERGED <main sha>`. `dist/1112b` is the fleet installation build. Rechecked its four SHA256SUMS entries and the unchanged tested Rust tree before merge; only the five named tracked files differ from main. No test failure is reclassified or waived.
+
+The same brief resolves the setup blocker: retain the existing protocol, with a dedicated `fleet-bridge` service/proxy UID on each host and `ai` endpoint UIDs. Ops creates users/groups through ucs-ops; document system units with `User=fleet-bridge` and service-owned 0640 bindings where endpoint readability is needed. No runtime change is authorized. Setup will continue after the version merge, before plan 003.
