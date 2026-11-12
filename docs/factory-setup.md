@@ -524,7 +524,7 @@ Executed on z690 against the packaged helper and production bridge:
 ```text
 sudo -n unshare --mount --propagation private python3 <isolated NVMe directory>/entry.py
 # entry.py binds private /tmp and /run, then runs:
-python3 -B dist/1112c/test-setup-forge-box.py --root /tmp/setup-proof-1112c --dist /srv/stacks/codex/dist/1112c
+python3 -B dist/1112c/test-setup-forge-box.py --root /tmp/setup-proof-apparmor-1112c --dist /srv/stacks/codex/dist/1112c
 exit 0
 ```
 
@@ -534,6 +534,8 @@ Actual stdout:
 {
   "passed": true,
   "checks": [
+    "sandbox_preflight_passes_as_endpoint_prints_manifest_digest_and_relocates",
+    "simulated_namespace_denial_refuses_before_enrollment_without_policy_changes_or_fallback",
     "init_stages_three_seats_without_services_and_repeat_refuses_without_mutation",
     "real_pinned_OpenSSH_generated_restricted_sudo_entry_and_nologin_proxy_start",
     "three_real_enrollments_local_pair_and_remote_pilot_with_separate_service_endpoint_uids",
