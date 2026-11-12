@@ -218,3 +218,26 @@ Implementation citations in INTERFACE.md were mapped to this qualified Rust tree
 The pilot alone uses ai and roots named pilot (state, config, run, renewal runtime, units and staged SSH generation). SETUP supplies exact init, activation and owned-root removal commands; its root is never reused as final. Final per-endpoint account/UID/path parameterisation and the final once-only init belong to S/1112g, after the pilot works. Do not add those parameters or S crypto/wait code to T. The helper may render existing renewal templates with pilot path/unit substitutions so the approved throwaway paths work without broadening writable roots. Until S is live the mailbox carries notices only, never a secret.
 
 No host contact, deployment, merge, 003 work, account provisioning, firewall/policy edits or message dispatch is authorized. Generated artifacts are reviewed whole and installed by Ops through ucs-ops. Stop at FORK PACKAGE READY dist/1112f with all hashes and the full bwrap digest.
+
+## T implementation and development proof — 2026-11-12
+
+Runtime source is frozen at `c2f29c9f13bdd414736fc986284cb49672829c58`; operator/qualification implementation at `863900fa6e`. Whole 1112f is being built by package.py from that Rust tree, with version 0.167.2+ignibyte.1112f and no additional updater/provenance code. Main stays `32f47da69f46569d01d91ad2c412366f0c64bf07`. No fleet-host contact or deployment occurred.
+
+```text
+$ RUSTUP_TOOLCHAIN=1.95.0 CARGO_BUILD_JOBS=8 CARGO_TARGET_DIR=/mnt/fast/target TMPDIR=$TASK/tmp cargo test --locked --manifest-path codex-rs/Cargo.toml -p codex-factory -- --test-threads=8
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+(binary target: 0 tests, PASS)
+$ TMPDIR=$TASK/tmp python3 -m unittest discover -s scripts/factory -p test_check_package.py
+Ran 9 tests
+OK
+$ rustfmt --check --edition 2024 --config skip_children=true codex-rs/factory/src/main.rs codex-rs/factory/src/network.rs
+exit 0
+$ # Python compile and runbook shell syntax checks
+PASS; runbook host commands were parsed, never executed
+```
+
+The development T proof passes 20 groups against the current production/fault bridge pair. It runs real OpenSSH/PAM in an owned private systemd/network fixture, with the actual kernel peer UID, a password-locked fleet-bridge account, root-owned one-line key/Match/dispatcher/zero-argument launcher, and no service sudo. It proves the four-line Ops check (including explicit SSH refusals, never a timeout), exactly one ids-only wrong-command syslog line, three enrollments/four directed edges/two forbidden edges, idle/no registry polling, duplicate owners, lease lapse/restoration, bearer reload/R publication, both process deaths/owned stale cleanup, wrong pins/UIDs/fake SSH context/key injection/root code/config generations, nine bad replies, four wrong authenticated greetings, three commit/caller cuts, real systemd restart/backoff, current-key/revocation/boot fences, and pilot R path/allowlist/unit integration without identity/registry migration. Fixture failures were corrected before this pass; an earlier fixture pointed at an old explicit-target debug output, so its crash proof was discarded and rerun against the correctly hashed current binaries.
+
+The public socket is atomically renamed into place only after its inode/device/process ownership record is durable. Crashes before publication cannot leave an unproven public socket; live or unknown sockets are never deleted to make startup pass. Legacy connect-host/remote-entry remains solely for compatibility fixtures; the shipped setup requires Forge-initiated transport.
+
+Full release/package proof and final hashes follow below. The 14 recorded upstream-owned workspace failures remain failures in plan 002, not waived. No unrelated workspace test rerun, S code, automatic watcher, encryption, final-account parameterisation, stock provenance guard, merge or plan 003 work is claimed.
