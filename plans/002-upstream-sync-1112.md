@@ -342,3 +342,249 @@ Neither probe created a registry, service key, credential, listener, or network 
 The owner explicitly **APPROVED** the version fix in `/tmp/fork-brief-uid.txt`: merge with `--no-ff`, push main, and print `FORK VERSION MERGED <main sha>`. `dist/1112b` is the fleet installation build. Rechecked its four SHA256SUMS entries and the unchanged tested Rust tree before merge; only the five named tracked files differ from main. No test failure is reclassified or waived.
 
 The same brief resolves the setup blocker: retain the existing protocol, with a dedicated `fleet-bridge` service/proxy UID on each host and `ai` endpoint UIDs. Ops creates users/groups through ucs-ops; document system units with `User=fleet-bridge` and service-owned 0640 bindings where endpoint readability is needed. No runtime change is authorized. Setup will continue after the version merge, before plan 003.
+
+## Urgent complete-package fix — owner-authorized 2026-11-12
+
+**Goal / authorization:** `/tmp/fork-brief-hosts.txt`, including its 11:09 addendum and owner row `beef7305`, explicitly orders the whole upstream Codex program plus fork code, mechanically enforced, ahead of setup and plan 003. The prior no-tool smoke proved model access only; it did not qualify a usable fleet build. Branch `plan/002-complete-package` starts at main `413612082ee930c005ca805452d52c202f5debbb`.
+
+**Smallest version:** One `scripts/factory/package.py` entry point builds upstream's current Linux package contract and adds the factory bridge. A standalone `check_package.py` reads `.github/actions/build-codex-packages/action.yml`, `.github/scripts/build-codex-package-archive.sh` and the upstream canonical layout builder; missing or unknown requirements fail closed. Reuse that builder for layout, not an independently maintained copy. For the selected `x86_64-unknown-linux-gnu` target, the upstream file union is `codex-package.json`, `bin/codex`, `bin/codex-app-server`, `bin/codex-code-mode-host`, `bin/codex-exec-server`, `codex-resources/bwrap`, and `codex-path/rg`. Add `bin/codex-factory-bridge`, interface/manifest/checksums. No GNU voice resources are selected by the upstream archive script (its voice assembly is restricted to Darwin, Linux musl and Windows). Changes in upstream requirements must turn the check red rather than silently omit a file.
+
+Build from the unchanged Rust source tree at `6cb7fd718329da87bfd1dcf4c10536cf82b1c367`, including `CODEX_FACTORY_REVISION` set to that commit. Preserve the existing CLI bytes if compatible with the upstream release steps; otherwise record its new hash and version. Follow Linux's build-bwrap/strip/hash-before-runtime-build step, so the bundled bwrap digest is embedded. Use eight jobs and the verified V8 pair. Publish only a fresh `dist/1112c` through the package script; freeze both 1112 and 1112b. Do not change Rust, accounts, live hosts, services, setup artifacts or plan 003 during this prerequisite.
+
+**Files:** Add `scripts/factory/package.py`, `scripts/factory/check_package.py`, `scripts/factory/test_check_package.py`, and `scripts/factory/qualify_packaged_tools.py`; update this plan, `docs/fork-mailbox.md`, `WORKFLOW.md` with the permanent packaging rule, and one CHANGELOG-FORK.md line. Ignored output is the complete `dist/1112c` package. No other tracked files.
+
+**Proof:** Show the standalone completeness check FAIL on frozen dist/1112b and PASS on the new package; run its focused regression tests and relevant existing upstream package-builder tests. From the installed package path, use the owner's exact no-daemon/no-approval/ignore-config/ignore-rules/strict-config command line with GPT-6.1 Terra high for (a) an actual shell read under read-only, (b) an actual file write under workspace-write, and (c) a local stdio MCP tool if available. Use private CODEX_HOME/auth/config and isolated NVMe directories, with actual tool-event/output and filesystem assertions; do not count a no-tool response as a pass. Rerun all seven existing mailbox qualifiers, with production binaries from the new package and the matching separate fault pair. Record every result and any limitation in MANIFEST.json and this plan, including complete upstream file presence, ELF requirements, source identities, hashes and CLI version. Never print real credentials. The 14 original upstream-owned workspace failures stay failures; no full workspace rerun is requested. Finish with `FORK HOSTS READY <folder> <codex sha256 first 12> <code-mode-host sha256 first 12>`, then resume setup and plan 003.
+
+### Complete-package proof result
+
+Runtime source remains **`6cb7fd718329da87bfd1dcf4c10536cf82b1c367`**, with no Rust edits. The package build used eight jobs, Rust/Cargo 1.95.0, factory install context, STABLE_GIT_COMMIT/CODEX_FACTORY_REVISION set to that source, and the same verified V8 pair. The package entry point is the only dist creator; it invokes upstream's canonical builder and adds the full action binary union plus the bridge. Linux bwrap was built, stripped, hashed, and embedded before building the runtimes, following upstream's Cargo release action.
+
+```text
+$ python3 scripts/factory/package.py --output dist/1112c --source-commit 6cb7fd718329da87bfd1dcf4c10536cf82b1c367 --target x86_64-unknown-linux-gnu --target-dir /mnt/fast/target --work-dir <isolated fresh directory>
+Complete package created: /srv/stacks/codex/dist/1112c
+exit 0; 1019.56s
+$ python3 scripts/factory/check_package.py dist/1112b
+passed=false; missing canonical bin/codex, bin/codex-app-server,
+bin/codex-code-mode-host, bin/codex-exec-server, codex-package.json,
+codex-path/rg, codex-resources/bwrap, bin/codex-factory-bridge
+exit 1 (expected negative control; flat two-binary layout is incomplete)
+$ python3 scripts/factory/check_package.py dist/1112c
+passed=true; missing=[]; notExecutable=[]; errors=[]; exit 0
+$ python3 -B -m unittest discover -s scripts/factory -p test_check_package.py -v
+Ran 6 tests; OK
+$ CODEX_REPO_ROOT=/srv/stacks/codex python3 -B -m unittest discover -s scripts/codex_package -p 'test_*.py'
+Ran 27 tests; OK
+```
+
+The gate derives the current file inventory from upstream, detects a newly added action binary automatically, rejects each individually missing file and external-helper symlinks, and fails closed on unreviewed archive assembly changes. Its archive digest must be reviewed again after an upstream change. Other targets, including the musl voice-bundle branch, are refused until their whole resource contract is reviewed; they cannot silently pass the GNU gate.
+
+| Every upstream GNU Linux package file | Present in 1112c |
+| --- | --- |
+| codex-package.json | yes |
+| bin/codex | yes |
+| bin/codex-app-server | yes |
+| bin/codex-code-mode-host | yes |
+| bin/codex-exec-server | yes |
+| codex-resources/bwrap | yes |
+| codex-path/rg | yes |
+| Fork addition: bin/codex-factory-bridge | yes |
+
+No upstream file in this target's package contract is omitted. The root also contains INTERFACE.md, MANIFEST.json and SHA256SUMS. The source-cited interface now lives in tracked docs/fork-mailbox.md so future packaging does not depend on an ignored historical dist. The CLI hash **changed**, because this release follows the Linux bwrap-digest/source-stamping build. Its version remains **`codex-cli 0.167.2+ignibyte.1112b`** from the same source; model discovery remains numeric 0.167.2. Factory revision is the full source above and public updates remain disabled.
+
+- `bin/codex`: 1632394040 bytes; SHA-256 `87b000eb4f2b2e3be3944cbced938b3d6ad5b1fe9945946e26e6ec041ca36458`.
+- `bin/codex-code-mode-host`: 206347296 bytes; SHA-256 `1b3567c030899cf44333b335686e3b7c5dbd7db8af2bbe5f715ddd98db35a0fa`.
+- `codex-resources/bwrap`: stripped/embedded SHA-256 `bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023`.
+
+The manifest inventories every file's bytes/hash and every ELF's library/symbol requirements. All five first-party binaries require GLIBC_2.39; bwrap requires GLIBC_2.38; the pinned rg has no dynamic glibc requirement. Destination ABI checks remain the owner's installation step.
+
+The packaged live proofs used the available z690 ChatGPT login through private mode-0700 CODEX_HOME directories and mode-0600 credential copies. The common command prefix was exactly the owner's:
+
+```text
+dist/1112c/bin/codex --no-daemon --ask-for-approval never exec --ignore-user-config --ignore-rules --strict-config --sandbox <mode> -c model="gpt-6.1-terra" -c model_reasoning_effort="high" --cd <isolated directory> --skip-git-repo-check --json -- <prompt>
+```
+
+stdin was closed. No binaries in target/ were used for these turns. The qualification driver is `scripts/factory/qualify_packaged_tools.py --package dist/1112c --work-dir <fresh private directory>`.
+
+| Actual tool proof | Verified result |
+| --- | --- |
+| read-only shell: `cat note.txt; uname -n` | PASS: one completed command, exit 0; unpredictable file nonce and actual hostname in tool output; turn completed; 6.78s |
+| workspace-write shell: write/read tool-write.txt | PASS: one completed command, exit 0; actual file bytes match the requested nonce/newline; turn completed; 7.08s |
+| read-only local stdio MCP probe_note | PASS: one MCP event and independently recorded server call/nonce; turn completed; exit 0; 6.97s |
+
+The first MCP attempt was correctly refused by the unchanged `never` approval policy because the fixture omitted readOnlyHint. Fixed the local fixture's truthful read-only/nondestructive/closed-world annotations and reran **only that failed case** (`--cases mcp_readonly`); no approval policy was weakened. Both the initial failed attempt and successful retry are recorded in the manifest. The final proof's owner auth/config/cache hashes are unchanged. No missing-host diagnostic remains. Packaged app-server, code-mode-host, exec-server `--help`, rg `--version`, and bwrap `--version` all exit 0.
+
+The matching fault pair was rebuilt from the same source with the same embedded bwrap digest/source stamps, eight jobs, dev-small, CARGO_INCREMENTAL=0, and the two fixture-fault features: exit 0, 129.34s. The seven existing mailbox programs were then rerun with production inputs from dist/1112c/bin and the separate fault pair:
+
+| Qualifier | Result / elapsed |
+| --- | --- |
+| contract | PASS; 64 checks; exit 0; 0.18s |
+| credentials | PASS; 7 checks; exit 0; 4.97s |
+| recovery | PASS; 9 checks; exit 0; 18.55s |
+| native | PASS; 5 checks; exit 0; 2.14s |
+| lifecycle | PASS; 4 checks; exit 0; 2.26s |
+| durability | PASS; 7 checks; exit 0; 1.69s |
+| reconciliation | PASS; 5 actual native crash lanes; exit 0; 10.61s |
+
+All 96 counted checks and five crash lanes pass. The original 14 upstream-owned workspace failures remain failures, not waived; no full workspace suite rerun is claimed. No Forge/dev-3/live service was touched. Qualification is recorded through the package entry point's `--record-qualification` mode, which rechecks file hashes/completeness and seals the manifest/checksums.
+
+Final checksum proof PASS: INTERFACE.md, MANIFEST.json, all five bin/ executables, codex-package.json, codex-path/rg and codex-resources/bwrap are OK. Both dist/1112 and dist/1112b retain every captured file, hash, size, mode and mtime (including the two staged setup helpers that already existed in 1112b when the host brief froze it). Scope PASS: exactly eight named tracked files; Rust tree equals the tested source; git diff --check passes. Removed only `/srv/stacks/codex-hosts-tmp-1112c`, including private credential copies and fixture output, with zero remaining mailbox namespace processes. The host /tmp remains its original tmpfs. Package/proof source is `20e6f97c5f`; subsequent changes in this commit only record these results.
+
+## Resume the authorized separate-UID setup delivery
+
+The setup/UID briefs authorize implementation; the hosts brief changes its installation target to the **whole dist/1112c folder** and freezes 1112b. Preserve its two already-staged helper files byte-for-byte. Continue on the current plan-002 branch from the completed host fix. Add canonical `scripts/factory/setup-forge-box.py`, `scripts/factory/test-setup-forge-box.py`, and `docs/factory-setup.md`; update package.py to include these fork operator assets as root setup-forge-box.py, test-setup-forge-box.py and SETUP.md, through the same packaging entry point. Update this plan, docs/fork-mailbox.md and one setup changelog line. No Rust, protocol or upstream-file change.
+
+The helper stages only the existing protocol and never starts services or creates users. Ops provisions fleet-bridge (nologin/no sudo) on both hosts, ai endpoints and a client group. Use protected /var/lib and /etc roots; the existing proxy rejects an ai-owned home as a private-key/config parent. Reserve the same numerical service UID on both hosts for the supplied routes schema's single service_uid. Only the four specified cross-seat edges are granted; self scope remains necessary for existing sync/inbox calls. Generate key-specific restricted SSH admission through ai's existing sshd login and an exact Ops sudoers command to execute remote-entry as fleet-bridge; the service account has no sudo permission. Bindings are service-owned 0640, endpoint credentials/ledgers ai-owned 0600/0700. Real thread IDs are supplied explicitly, routes stay disabled pending owner smoke/cutover, and a stock running session cannot gain fork hooks through an environment change.
+
+Proof: rerun the complete setup fixture with production 1112c/bin binaries, distinct service/endpoint UIDs, private /tmp, /run and sudoers mounts, actual loopback OpenSSH and the generated forced sudo command. Prove three enrollments, all four edges/receipts, both forbidden cross-seat directions, same-state serve restart/replay with exactly four records and no duplicated delivery, routes filled from supplied UUIDs, modes and repeated-init refusal. Record output in the tracked runbook and this plan; seal those assets and setup results through package.py, with original host proofs preserved and program hashes unchanged. No real host/service/account action. Then write plan 003 and stop for review as originally ordered.
+
+### Setup proof result
+
+Canonical setup, fixture and runbook source: `0228883c1b`. The package contains setup-forge-box.py, test-setup-forge-box.py and SETUP.md copied only through package.py; all match their tracked sources byte-for-byte. The helper's explicit init/bootstrap/enroll/routes/proof steps never start a service or create an account. Actual native thread IDs remain an operator input; routes stay disabled, and the real stock pilot needs an owner-controlled fork restart.
+
+```text
+$ sudo -n unshare --mount --propagation private python3 <isolated NVMe directory>/entry.py
+$ # entry.py provides private /tmp and /run and executes:
+$ python3 -B dist/1112c/test-setup-forge-box.py --root /tmp/setup-proof-1112c --dist /srv/stacks/codex/dist/1112c
+Setup fixture exit: 0
+passed=true; seats=3; directedEdges=4
+durableMessagesAfterRestart=4; receiptsPerMessage=2
+serviceUid=65534; endpointUid=65532; modelsStarted=0
+transport="actual loopback OpenSSH; generated sudo forced command; one kernel"
+realFleetHostsTested=false
+```
+
+All seven setup checks PASS: init stages three seats with no listeners and repeated init refuses without registry mutation; the generated restricted SSH/sudo entry runs a nologin service account; three real enrollments include the remote pilot via connect-host; every allowed direction sends/receives with service/inbox receipts; both ungranted direct spec/pilot directions fail; same-state serve restart plus exact-UUID resend/re-receive retains four records and one delivery receipt each; disabled routes have all supplied UUIDs and correct binding/credential owners/modes. Full actual stdout is pasted in SETUP.md as requested. The fixture's root SSH frontend and one kernel do not prove production ai sudoers admission, systemd units, physical-host routing/firewall/host pins or the live native cutover. No live host/service/account was changed.
+
+The owner runbook lists the per-host ucs-ops account/group request, every directory/file owner/group/mode, exact system units and commands by actor, the generated forced SSH/sudoers lines, local/remote enrollment, explicit message/restart proof, native binding environment, thread/factoryMessage wake/defer/reconciliation, current stock-session limitation and finite lease maintenance. A dedicated proxy UID is required on dev-3. Matching numerical fleet-bridge UIDs are required by the supplied routes schema. Service state/config use /var/lib and /etc because the existing proxy rejects an ai-owned parent. The package gate's six regressions still pass after adding operator assets; no Rust file changed. Original host qualification is preserved in MANIFEST.json together with setup's PASS. Program hashes remain codex `87b000eb4f2b…`, code-mode-host `1b3567c03089…`; all package checksums are reverified after sealing.
+
+Cleanup PASS: removed only the two task-owned setup scratch directories `/srv/stacks/codex-setup-tmp-1112b` and `/srv/stacks/codex-setup-tmp-1112c`, including synthetic keys/state/logs. Neither fixture namespace retained a process; the host /tmp remains tmpfs. The final package preserves both older dist folders; only 1112c gained the requested operator assets.
+
+## Owner-authorized Ubuntu sandbox precondition — no rebuild
+
+`/tmp/fork-brief-apparmor.txt` (read in full) reports 1112c received with valid checksums on Forge. Ubuntu 24.04 with `kernel.apparmor_restrict_unprivileged_userns=1` rejects its sandbox with `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`; stock's path/xattr-specific AppArmor permission does not cover the fork's different path/file. Danger-full-access succeeding does not qualify sandboxed operation. Ops is fixing the root-owned bwrap/xattr/AppArmor policy through ucs-ops; this task must not change those settings or ownership, rebuild any binary, or merge before owner review.
+
+**Scope / files:** On `plan/002-apparmor-precondition`, update `scripts/factory/setup-forge-box.py`, `scripts/factory/test-setup-forge-box.py`, `scripts/factory/package.py`, `docs/factory-setup.md`, `docs/fork-mailbox.md`, `WORKFLOW.md`, `CHANGELOG-FORK.md`, and this plan. Refresh only 1112c's operator assets, manifest and checksums through package.py. Preserve every ELF and both older dist folders. Plan 003 remains unimplemented on its separate planning branch.
+
+**Smallest version / proof:** Add a preflight subcommand and enforce it at endpoint enrollment/proof steps under the actual endpoint UID. Read the bwrap digest from package-root/MANIFEST.json, verify the file, print its relocated path/digest, and run a fixed no-model read-only user/pid/network-namespace probe through that packaged bwrap. A failure must plainly name the Ops precondition and refuse; no full-access fallback or policy/ownership mutation. Service-only staging runs as fleet-bridge, so the runbook requires a separate ai preflight on every host and enrollment repeats it as ai. Extend the owned separate-UID SSH fixture with real successful preflight, a simulated bwrap denial that prevents enrollment before any credential/network action, and a relocated package-root check. Record z690's positive result without claiming Ubuntu/AppArmor policy qualification on the real hosts. Re-strip two copies of the existing cached bwrap without rebuilding and compare its published digest; retain Cargo cache reuse/strip-before-hash and never post-strip. Make package READY output include the full manifest bwrap digest. Audit runtime paths for relocation, document configurable absolute operator paths and the separate application-journal/home examples, recheck checksums/scope, then ask the owner to review the 1112c commits before any main merge.
+
+### Sandbox-precondition proof result
+
+Helper/builder source `0203d3503f`, runbook proof update `ad883b7eb9`. No Cargo build, binary rebuild, policy, xattr, sysctl, production ownership, live service or real-host operation was performed. All seven packaged runtime executable/resource SHA-256 digests match the before snapshot; codex remains `87b000eb4f2b…`, code-mode-host `1b3567c03089…`, and bwrap remains **`bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023`**. Two independent stripped staging copies of the existing same-source Cargo bwrap each reproduced that full digest; this is cached-artifact stability, not a claim of clean-build reproducibility across toolchains/paths.
+
+```text
+$ # No-model probe as endpoint UID, through the packaged bwrap:
+$ python3 <package>/setup-forge-box.py preflight --bin-dir <package>/bin
+sandbox.passed=true; uid=65532 in the separate-UID fixture
+bwrapSha256=bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023
+$ sudo -n unshare --mount --propagation private python3 <isolated>/entry.py
+Setup/sandbox fixture exit: 0
+passed=true; checks=9; seats=3; directedEdges=4; durableMessagesAfterRestart=4
+receiptsPerMessage=2; serviceUid=65534; endpointUid=65532; modelsStarted=0
+realFleetHostsTested=false
+$ TMPDIR=<isolated> python3 -B -m unittest discover -s scripts/factory -p test_check_package.py -v
+Ran 6 tests; OK
+```
+
+The nine-check fixture adds successful endpoint preflight/relocated resource lookup and a simulated `RTM_NEWADDR: Operation not permitted` that emits a plain path/digest/ucs-ops refusal before reading enrollment inputs. It retains the seven real local SSH/enrollment/route/restart checks. Full actual output is pasted in SETUP.md. A separate reflink copy of the **whole folder** at a new prefix passed its packaged preflight as uid 1000, printing the relocated bwrap path and original full manifest digest; relocated CLI/bridge versions also passed. Runtime/setup source contains no fixed `/home/ai/.local/share/fleet-codex` package prefix. Only the client journal defaults use `/home/ai/fleet-spec-project`; CODEX_HOME examples and generated absolute bindings/units/SSH paths are explicitly operator configuration to update on relocation.
+
+z690's `/proc/sys/kernel/apparmor_restrict_unprivileged_userns` is absent and unchanged. Actual restricted-Ubuntu approval remains Ops' work and must be verified by the owner on each endpoint host after the ucs-ops change; the injected denial is not an actual AppArmor policy test. The helper does not modify policy, ownership or xattrs and offers no danger-full-access fallback. The runbook makes root-owned bwrap plus its root-only xattr/profile a precondition on restricted Ubuntu and requires the probe as ai, not the bridge service UID.
+
+Only operator text assets, manifest and checksums were refreshed through package.py. All source/packaged helper/doc bytes match; all SHA256SUMS entries pass. A first digest-verification command had the wrong working directory; its corrected absolute-path rerun passed. The packager now emits the required digest mechanically:
+
+```text
+FORK HOSTS READY /srv/stacks/codex/dist/1112c 87b000eb4f2b 1b3567c03089 BWRAP bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023
+```
+
+No main merge is authorized yet. The owner explicitly requested review of 1112c commits `00d4dab308`, `20e6f97c5f`, `1145eeb133` and their setup/precondition follow-ups before any main merge. The 14 earlier upstream-owned workspace failures remain failures, not waived; Rust source is unchanged from `6cb7fd7183`.
+
+Final scope is exactly the eight named follow-up files. Removed only `/srv/stacks/codex-apparmor-tmp-1112c`, including the relocated reflink package and synthetic fixture keys/state; zero fixture namespace processes remained. The host /tmp remains tmpfs. No main merge or push to main occurred in this follow-up.
+
+## Owner review correction: shipped voice bundle and launcher
+
+`/tmp/fork-brief-voice.txt` (12:11 CST, read in full) explicitly withholds merge approval and orders the complete shipped program, including the top-level codex→bin/codex link and all 38 voice files in the owner's 45-path stock inventory. The prior GNU-only layout gate was insufficient: it omitted the real release's voice assembly. No waiver is inferred from the fleet not using audio. Plan 003 remains pending until this merges.
+
+**Authorized scope / files:** Branch `plan/002-shipped-package` from the unmerged package/precondition work. Update `scripts/factory/{package.py,check_package.py,test_check_package.py}`, add `scripts/factory/build_voice.py` and recorded upstream shipped-path list/provenance files beside it, update `third_party/voice/assemble_package.py` and its tests only if needed to accept the fork's valid build-metadata version without changing CLI bytes, and update `docs/{factory-setup.md,fork-mailbox.md}`, WORKFLOW.md, CHANGELOG-FORK.md and this plan. Do not edit 1112c. Only package.py creates fresh dist/1112d. Retain the AppArmor preflight and full bwrap digest in READY output. No main merge, live-host action, system package/policy change or plan-003 code.
+
+**Smallest version / proof:** Preserve 1112c's validated full base binaries, especially CLI `87b000eb4f2b…` and bwrap `bd2ed101e191…`, after verifying source/target/manifest hashes. Build the missing same-source voice helper and the pinned native closure via upstream's native recipe/release stage+seal+assemble flow; use eight jobs and local isolated NVMe paths. Never relabel a mismatched upstream runtime receipt. A minimal packaging-version extension may accept the existing fork SemVer build metadata while retaining all runtime source/hash/target checks. Add the relative top-level codex symlink after upstream voice assembly. The gate must union the upstream-derived layout with a recorded matching stock release's shipped paths (including licenses/notices/runtime receipts), rejecting every omission. Show 1112c red and 1112d green, cover omission/link regressions and upstream voice assembly tests, validate/load the relocated native voice closure without capturing audio, then rerun packaged shell/write/MCP turns and all seven mailbox lanes. Record the complete inventory, source/provenance, constraints and proof in manifest/plan. If the native runtime cannot be built or fetched on z690, STOP and name the exact missing prerequisite and upstream release recipe; do not publish/claim ready or skip files. Report immediately if preserving CLI/bwrap bytes proves impossible. Finish with FORK PACKAGE READY, then request owner review before merge.
+
+### Proof result — complete shipped package 1112d
+
+Implementation/proof source: `4e4385fd3c`; runtime Rust tree remains `6186ca2947a18832c68ffe3b50a53149744bf4ce` from `6cb7fd718329da87bfd1dcf4c10536cf82b1c367`. Main remains `413612082ee930c005ca805452d52c202f5debbb`. This owner correction authorizes the implementation, **not a main merge**. Plan 003 is unchanged and awaits review after this merge.
+
+The official `rust-v0.167.2/codex-package-x86_64-unknown-linux-musl.tar.gz` was fetched from openai/codex and SHA-256 verified against the release asset digest `3d77be1748d35a4bb0e7f8752cde3b11890c63338e8c599f01eafa4a59e17b3d`. Its 44 regular-file paths, plus the upstream installer's `codex -> bin/codex` link, exactly equal the owner's 45-path installed list. `scripts/factory/upstream-shipped-linux.json` records this provenance, installer source hash and full inventory. The gate unions those paths with the current derived GNU layout; it requires 47 paths including app-server and the fork bridge. Metadata, licenses and notices must exist but need not be executable. The launcher must be that exact relative link. Release-version/installer drift requires another inventory review.
+
+Upstream's standalone pinned-source recipe built the native runtime successfully. An initial Cargo helper attempt failed because its restricted pkg-config view excluded ALSA; it was not published. Used the **actual upstream Linux release job** instead: verified official Bazel 9.2.0 (`7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694`), `run_bazel_with_buildbuddy.py build --config=release --jobs=8 //codex-rs/voice-host:codex-voice-host //third_party/voice:native_runtime`, local execution, pinned upstream toolchains/static ALSA, then `release_runtime.py` stage/seal. All caches, sandbox, JVM temp and output roots were inside `/srv/stacks/codex-voice-tmp-1112d`. Bazel: **PASS, 135.416s, 6,336 actions**. Native/helper build inputs match the declared runtime source; receipts were not relabeled. The helper reports that full source commit. No system tool install or policy change occurred.
+
+Created only fresh `dist/1112d`, through:
+
+```text
+TMPDIR=/srv/stacks/codex-voice-tmp-1112d/tmp python3 scripts/factory/package.py \
+  --output dist/1112d --work-dir /srv/stacks/codex-voice-tmp-1112d/package-work \
+  --base-package dist/1112c --voice-inputs /srv/stacks/codex-voice-tmp-1112d/voice-release \
+  --source-commit 6cb7fd718329da87bfd1dcf4c10536cf82b1c367
+Complete package created: /srv/stacks/codex/dist/1112d
+```
+
+The entry point verifies/copies the **whole** prior package, checks its source/target/tree and every manifest/hash, runs upstream `assemble_package.py` with the matching public runtime, then adds the installer link. The only upstream Python change accepts the fork's SemVer build metadata (`0.167.2+ignibyte.1112b`); version equality, runtime commit, target, pinned source and all hash checks remain enforced. The upstream shell archive wrapper excludes GNU app targets, so the fork calls its same assembly implementation directly for the native GNU package. No Rust code or version changed.
+
+1112d contains **all 38 voice files**: one helper, 26 native libraries/plugins (all seven plugins), runtime/voice manifests, sources, NOTICE and seven licenses. The helper SHA-256 is `3b47d23090f210da4c145cd92151d5d3819b18ae94a402341ec1b471fe783ef3`; helper and native libraries require at most GLIBC_2.28. The unchanged CLI still sets the whole package's GLIBC_2.39/OpenSSL 3.0 requirements. Every one of 1112c's seven runtime files is byte-identical in 1112d. In particular:
+
+```text
+bin/codex  87b000eb4f2b2e3be3944cbced938b3d6ad5b1fe9945946e26e6ec041ca36458
+bwrap      bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023
+codex-cli 0.167.2+ignibyte.1112b
+codex -> bin/codex
+```
+
+Focused proof (same implementation head):
+
+```text
+python3 -m unittest discover -s scripts/factory -p test_check_package.py
+Ran 9 tests ... OK
+python3 -m unittest discover -s third_party/voice -p test_assemble_package.py
+Ran 17 tests ... OK
+CODEX_REPO_ROOT=/srv/stacks/codex PYTHONPATH=scripts python3 -m unittest discover -s scripts/codex_package -p 'test_*.py'
+Ran 27 tests ... OK
+check_package.py dist/1112c: passed=false, missing=39 (38 voice + codex link)
+check_package.py dist/1112d: passed=true, missing=[], notExecutable=[], errors=[]
+```
+
+The broader upstream voice Python suite ran 94 tests: 72 passed, 19 platform/toolchain skips, three harness errors because patchelf was missing. Fetched/checksummed official patchelf 0.19.3 only into the isolated directory and reran **only those three**: all pass (75 passed in total, 19 skips). The initial package-suite invocation lacked CODEX_REPO_ROOT and did not load its tests; the corrected exact command above passes all 27. No Rust crate was touched and no workspace suite rerun is claimed. The original 14 upstream-owned workspace failures remain **failures, not waived**.
+
+Actual packaged voice protocol proof at both the published path and a reflink copy of the whole folder at another prefix: Hello→Ready, InitializeRuntime→RuntimeReady, Close→Closed, helper exit 0. Verified all **26** receipt-listed private libraries, including all seven plugins, in the helper's mapped libraries at the respective package prefix; no host GStreamer fallback. Process hardening correctly denied an ordinary /proc/maps read; the fixture used sudo to inspect its own helper without changing hardening. No audio devices, recording, real voice conversation or model session were started by this check.
+
+Packaged tool proof used the unchanged exact owner flags, separate private ChatGPT home/login, GPT-6.1 Terra high, and actual event/effect assertions:
+
+| Tool turn | Result |
+| --- | --- |
+| read-only shell, nonce + hostname | PASS; one successful command; 6.53s |
+| workspace-write, actual nonce file bytes | PASS; one successful command; 6.63s |
+| local read-only MCP, independent server-call nonce | PASS; one MCP call; 7.28s |
+
+All turns exit 0 and complete, with no missing-host diagnostic. Owner auth/config/model-cache fingerprints remain unchanged. All five existing packaged helper/resource launch checks pass. No no-tool turn is counted as tool qualification.
+
+All seven existing mailbox qualifiers reran with production inputs from `dist/1112d/bin`; durability/reconciliation use the same-source separate dev-small fault pair. Its factory revision and embedded bwrap digest were checked; it was reused, not rebuilt. The first fixture wrapper stopped before any mailbox lane because Python mmap containment was used incorrectly; corrected the fixture to substring `.find()` and then ran every lane. Production/fault runtime code was unchanged.
+
+| Mailbox lane | Result / elapsed |
+| --- | --- |
+| contract | PASS; 64 checks; 0.20s |
+| credentials | PASS; 7 checks; 5.49s |
+| recovery | PASS; 9 checks; 18.28s |
+| native | PASS; 5 checks; 2.18s |
+| lifecycle | PASS; 4 checks; 2.30s |
+| durability | PASS; 7 checks; 1.76s |
+| reconciliation | PASS; all five native crash lanes; 10.75s |
+
+96 counted checks and five crash lanes pass. Fixture `/tmp` was a private mount of the task's NVMe directory; the host /tmp stayed its original tmpfs. The updated packaged setup helper/test also reran in a private /tmp and /run namespace: **PASS all nine checks**, three separate-UID enrollments, all four permitted edges, both denied edges, restart/replay with four unique messages and two receipts each, no models. Endpoint UID 65532 preflight passes, including relocation and simulated denial before enrollment. Whole-folder relocated preflight also passes as UID 1000. z690's AppArmor restriction sysctl remains absent; no real Forge/dev-3 or restricted Ubuntu policy qualification is claimed. Ops still must permit the **new installed 1112d path**, despite its unchanged bwrap digest.
+
+The runbook/interface now target the whole 1112d folder and keep the previous 1112c setup proof explicitly historical. Source review, package manifest, runtime/voice manifests and complete checksums are the review record; no evidence folder, live deployment, new subsystem, main merge or plan-003 implementation was created.
+
+Final audit: sealed 1112d `SHA256SUMS` **PASS 52/52**, including both manifests, the relative launcher and all 38 voice files; MANIFEST.json records all successful qualifications and full bwrap digest. All 1112c file hashes match the pre-task snapshot. `git diff --check` and named-file scope pass; no task process remained. Removed **only** `/srv/stacks/codex-voice-tmp-1112d`, including private login copies, transient archives/build caches and fixture namespaces/files. Host `/tmp` remains its original tmpfs. Review branch `plan/002-shipped-package` is pushed; main is unchanged and merge approval remains pending.
+
+```text
+FORK PACKAGE READY /srv/stacks/codex/dist/1112d 87b000eb4f2b bd2ed101e191 BWRAP bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023
+```
+
+### Owner merge approval — 2026-11-12 13:24 CST
+
+APPROVED to merge `plan/002-shipped-package` with `--no-ff` and push main, per `/tmp/fork-brief-merge-003.txt` and the owner's instruction in this session. Owner reports 1112d live at `/opt/fleet-codex/6cb7fd718329da87bfd1dcf4c10536cf82b1c367-1112d`, all 52 checksums/all 45 stock paths verified, three real tool turns and packaged preflight passing, and the Python spec manager sealing real cards on it. These are owner-reported live-host results; this seat did not contact either host. Prior proof and original 14 upstream-owned failures remain recorded as stated above. The complete-package gate was rerun before this approval record and passes. Plan 003 build approval has four additions in that brief, but the subsequent transport brief orders a plan-004 design note and stop before implementation.
