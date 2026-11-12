@@ -38,17 +38,17 @@ Whole 1112e includes voice/launcher. Require bwrap `bd2ed101e19111f5c06ea4bb16ac
 
 ---
 
-# Plan 004 — Part T: Forge-initiated transport (owner-selected; text review pending)
+# Plan 004 — Part T: Forge-initiated transport (APPROVED TO BUILD, 16:23 CST)
 
-**Goal/gate:** Owner `1fcc1441` chooses T: R/1112e then T/1112f, isolating signer recovery from transport changes. Dev-3→Forge port 22 stays CLOSED. Keep init/state; no fresh roots/deletion. Commands await review.
+**Goal/gate:** Owner `1fcc1441` chooses T: R/1112e then T/1112f, isolating signer recovery from transport changes. Dev-3→Forge port 22 stays CLOSED. The pilot uses an explicitly throwaway ai-enrolled root; final accounts and one durable init wait for S. R is owner-reported installed/proven. GO is /tmp/fork-brief-T-go.txt; no fleet-host action or merge is authorized.
 
 **Smallest version:** Add Forge connect-source/dev-3 source-entry in F/{main.rs,network.rs}. Forge fleet-bridge owns a dedicated 0600 key/dev-3 inventory pin and dials fleet-bridge@dev-3 on the same open port 22. **Withdraw the ai→sudo sketch:** SSH_* presence is caller-controlled (current network.rs:386); it is not proof of SSH authentication. Dev-3 Ops instead root-controls the service principal's accepted key/forced command and protocol-only login launcher; no ai-owned key lookup, ai→fleet-bridge sudo, password, arbitrary shell, PTY, forwarding or config/agent/proxy fallback. Ordinary ai access remains separate.
 
 ### Why this is not a workaround
 
-Keep separate service UIDs, actual SO_PEERCRED/allowed UID/process-incarnation checks, pinned peer identity and per-request host/key/lease/revocation checks in service::remote_frame. Same IDs/receipts/idempotency; no forwarding, nested reverse SSH or fabricated context. **Gate:** prove every check; any weakening means STOP/owner ruling. Ops must explicitly approve replacing literal nologin with the root-owned protocol-only launcher (not a general shell). If nologin or ai login is mandatory, STOP; do not improvise a bypass. Gate not yet passed.
+Keep separate service UIDs, actual SO_PEERCRED/allowed UID/process-incarnation checks, pinned peer identity and per-request host/key/lease/revocation checks in service::remote_frame. Same IDs/receipts/idempotency; no forwarding, nested reverse SSH or fabricated context. **Gate:** prove every check; any weakening means STOP/owner ruling. Ops must explicitly approve replacing literal nologin with the root-owned protocol-only launcher (not a general shell). If nologin or ai login is mandatory, STOP; do not improvise a bypass. The seven launcher conditions remain mandatory offline proof gates; owner GO authorizes their implementation, not a weakened check.
 
-**Launcher contract — 14:32 conditions, T only (not built in R):**
+**Launcher contract — seven conditions, T build approved after R proof:**
 1. T starts only after owner confirms R installed/proven; all seven conditions remain a review gate.
 2. Root owns /etc/ssh/fleet-bridge.keys, mode 0644; exactly one restrict/from="10.200.68.55"/forced-command key line, no home key lookup.
 3. Match User fleet-bridge: PermitTTY no; AllowTcpForwarding no; X11Forwarding no; AllowAgentForwarding no; PermitTunnel no; AuthenticationMethods publickey.
@@ -83,7 +83,7 @@ systemctl enable --now fleet-manager-bridge-source.service
 
 **Failures/proof:** Connector/proxy locks reject duplicates before socket mutation. Dev-3 reboot retains ledgers/invalidates presence; lock/owner/type/dead-incarnation proof precedes socket cleanup. Forge reboot preserves fencing/quarantine/reconciliation; connector/timer cannot bypass it. Prove fake SSH_* and ai-key/sudo/launcher injection denied; loopback SSH/UID/pin/host/lease/revocation, forbidden shell/forwarding, commit/reply cuts, duplicates/reboots/migration/rollback/R renewal. Repeat offline tools/voice/seven mailbox/R timer-crash proofs; no host contact.
 
-**Files:** F/{main.rs,network.rs}; S/{setup-forge-box.py,test-setup-forge-box.py,package.py,check_package.py,test_check_package.py}; add S/{fleet-bridge-ssh-entry.py,qualify_forge_transport.py}, S/systemd/fleet-manager-bridge-source.service.in; update docs/{factory-setup.md,fork-mailbox.md}, CHANGELOG-FORK.md, this plan. Launcher accepts only fixed protocol invocation/config, never shell syntax.
+**Files:** F/{main.rs,network.rs}; codex-rs/{Cargo.toml,Cargo.lock} for the explicitly approved 1112f version stamp; S/{setup-forge-box.py,test-setup-forge-box.py,package.py,check_package.py,test_check_package.py}; add S/{fleet-bridge-ssh-entry.py,qualify_forge_transport.py}, S/systemd/fleet-manager-bridge-source.service.in; update docs/{factory-setup.md,fork-mailbox.md}, CHANGELOG-FORK.md, this plan. Launcher accepts only fixed protocol invocation/config, never shell syntax.
 
 ```sh
 # z690 — fork seat, after text approval; fresh NVMe TASK
@@ -210,3 +210,11 @@ Each packaged tool case completed through the required packaged code-mode host, 
 The 14 recorded upstream-owned workspace failures remain failures in plan 002, not waived; no full workspace rerun was requested for R. Real Forge/dev-3 install, AppArmor path approval, current live backend and R operation on those hosts remain owner/Ops review. T runtime, its launcher/SSH-policy changes, S and plan 003 were not built. Stop at FORK PACKAGE READY dist/1112e for install review.
 
 Implementation citations in INTERFACE.md were mapped to this qualified Rust tree, including the new credentialCurrent sync flag. The final package seal records this proof; the temporary NVMe task tree is removed after sealing. Final source review and install approval remain with the owner.
+
+## T execution decisions — owner GO 16:23 CST
+
+1112e is installed/proven per owner; received bytes stay frozen. Build only T/1112f, version 0.167.2+ignibyte.1112f, whole upstream package/voice/root launcher plus the fork. Start this T branch from main and fast-forward the unmerged R dependency; main is untouched. Preserve the compile-time factory updater gate; no additional provenance guard or updater code in T. Ops sets updater.autoUpdateEnabled=false and drains stock backend/updater at cutover. The stronger stock start/attach refusal is a separately reviewed S item.
+
+The pilot alone uses ai and roots named pilot (state, config, run, renewal runtime, units and staged SSH generation). SETUP supplies exact init, activation and owned-root removal commands; its root is never reused as final. Final per-endpoint account/UID/path parameterisation and the final once-only init belong to S/1112g, after the pilot works. Do not add those parameters or S crypto/wait code to T. The helper may render existing renewal templates with pilot path/unit substitutions so the approved throwaway paths work without broadening writable roots. Until S is live the mailbox carries notices only, never a secret.
+
+No host contact, deployment, merge, 003 work, account provisioning, firewall/policy edits or message dispatch is authorized. Generated artifacts are reviewed whole and installed by Ops through ucs-ops. Stop at FORK PACKAGE READY dist/1112f with all hashes and the full bwrap digest.
