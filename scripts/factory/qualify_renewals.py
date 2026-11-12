@@ -170,11 +170,14 @@ def fixture(a):
         remote_policy = Path('/etc/fleet-manager-bridge-publisher.json')
         remote_policy.write_text(json.dumps(config['seats'][1]['policy'])); remote_policy.chmod(0o644)
         arm_ack, hit_ack = pubroot / 'hold-ack', pubroot / 'hit-ack'
+        poison = pubroot / 'echo-secret-error'
         wrapper = sshdir / 'publisher-proof.py'
-        wrapper.write_text('import pathlib,subprocess,sys,time\n' +
+        wrapper.write_text('import pathlib,subprocess,sys,time,json\n' +
+            'payload=sys.stdin.buffer.read(65537)\n' +
+            'if pathlib.Path('+repr(str(poison))+').exists():\n print("Error: "+json.loads(payload)["credential"],file=sys.stderr);sys.exit(1)\n' +
             'p=subprocess.run(' + repr(['/usr/bin/setpriv','--reuid',str(AGENT),'--regid',str(AGENT),'--groups',str(AGENT),
             '/usr/bin/python3','-I',str(helper),'publish-credential','--policy-file',str(remote_policy)]) +
-            ',input=sys.stdin.buffer.read(65537),capture_output=True)\n' +
+            ',input=payload,capture_output=True)\n' +
             'arm=pathlib.Path(' + repr(str(arm_ack)) + ')\n' +
             'if p.returncode==0 and arm.exists():\n pathlib.Path(' + repr(str(hit_ack)) + ').touch()\n while arm.exists():time.sleep(.01)\n' +
             'sys.stdout.buffer.write(p.stdout);sys.stderr.buffer.write(p.stderr);sys.exit(p.returncode)\n')
@@ -219,6 +222,11 @@ def fixture(a):
         assert credential('foreman-bot').read_bytes()==activated
         assert sum(x['event'].get('rotationId')==pending['id'] for x in snapshot()['audit'])==1
         checks.append('real_pinned_ssh_endpoint_uid_publication_lost_ack_retries_identical_candidate_once')
+        force_due('foreman-bot'); poison.touch(mode=0o600)
+        refused=broker(expected=1)
+        assert 'code=publisher_failed' in refused and not re.search('[0-9a-f]{64}',refused)
+        poison.unlink(); assert len(broker()['seats'])==1
+        checks.append('remote_peer_echoing_a_bearer_in_stderr_cannot_leak_it_into_the_root_failure_line')
         stop(sshd); (pubroot/'sshd.pid').unlink(missing_ok=True)
         old_file=credential('foreman-bot').read_bytes(); force_due('foreman-bot')
         broker(expected=1)

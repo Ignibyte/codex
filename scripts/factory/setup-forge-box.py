@@ -518,8 +518,13 @@ def ssh_publisher(p, data):
                '-oUserKnownHostsFile=' + p['knownHosts'], '-oHostKeyAlias=' + p['hostKeyAlias'],
                '-i', p['identityFile'], '-l', p['user'], '-p', str(p['port']), '--', p['address'],
                'codex-factory-publish-v1']
-    return json.loads(actor_run(dict(uid=0, gid=0, groups=[]), command,
-                               payload=json.dumps(data).encode(), timeout=20))
+    try:
+        return json.loads(actor_run(dict(uid=0, gid=0, groups=[]), command,
+                                   payload=json.dumps(data).encode(), timeout=20))
+    except Exception:
+        # A remote peer can echo its input in stderr. Never project any remote
+        # diagnostic (even one shaped like an error code) into the root journal.
+        raise RuntimeError('publisher_failed') from None
 
 
 def renew(c):
