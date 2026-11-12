@@ -681,6 +681,12 @@ fn read_rotation(state: &Path, seat: Uuid) -> Result<Option<Rotation>> {
 }
 
 fn cleanup_rotation_output(state: &Path, rotation: &Rotation) -> Result<()> {
+    let temporary = rotation_candidate_temporary(rotation);
+    if temporary.try_exists()? {
+        private_read(&temporary, 65536)?;
+        std::fs::remove_file(&temporary)?;
+        File::open(temporary.parent().context("rotation_parent_missing")?)?.sync_all()?;
+    }
     if rotation.output.try_exists()? {
         let value: Value = serde_json::from_slice(&private_read(&rotation.output, 65536)?)?;
         let expected = hex(&mac_for(
@@ -705,6 +711,12 @@ fn cleanup_rotation_output(state: &Path, rotation: &Rotation) -> Result<()> {
         .sync_all()?;
     }
     Ok(())
+}
+
+fn rotation_candidate_temporary(rotation: &Rotation) -> std::path::PathBuf {
+    rotation
+        .output
+        .with_file_name(format!(".candidate-{}", rotation.id))
 }
 
 pub fn rotation_status(state: &Path, seat: Uuid) -> Result<Value> {
@@ -740,7 +752,16 @@ pub fn rotate_with_id(
         (1..=3600).contains(&ttl) && overlap <= 60,
         "credential_ttl_bound"
     );
-    ensure!(output.is_absolute(), "rotation_output_absolute_required");
+    ensure!(
+        id.is_none() || output.is_absolute(),
+        "rotation_output_absolute_required"
+    );
+    let output = if output.is_absolute() {
+        output.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(output)
+    };
+    let output = output.as_path();
     let _lock = lock(state)?;
     lifecycle::check_boot(state)?;
     let mut registry = load(state)?;
@@ -829,7 +850,16 @@ pub fn rotate_with_id(
             "rotation_output_conflict"
         );
     } else {
-        exclusive_write(output, &bytes)?;
+        // A killed write can leave a partial temporary file, never a partial
+        // candidate. The durable rotation owns exactly this temporary name.
+        let temporary = rotation_candidate_temporary(&rotation);
+        if temporary.try_exists()? {
+            private_read(&temporary, 65536)?;
+            std::fs::remove_file(&temporary)?;
+        }
+        exclusive_write(&temporary, &bytes)?;
+        fixture_fault(state, "rotation_before_output_rename")?;
+        std::fs::rename(&temporary, output)?;
         File::open(output.parent().context("rotation_parent_missing")?)?.sync_all()?;
     }
     fixture_fault(state, "rotation_after_output")?;
@@ -2628,6 +2658,22 @@ mod renewal_tests {
         revoke(&f.0, f.1).unwrap();
         assert!(rotate_with_id(&f.0, f.1, &out, 3600, 60, Some(id)).is_err());
         assert!(finish_rotation(&f.0, f.1, id, false).is_err());
+    }
+
+    #[test]
+    fn partial_candidate_temporary_is_rebuilt_from_committed_rotation() {
+        let f = Fixture::new();
+        let id = Uuid::new_v4();
+        let out = f.0.join("atomic-candidate");
+        rotate_with_id(&f.0, f.1, &out, 3600, 0, Some(id)).unwrap();
+        let rotation = read_rotation(&f.0, f.1).unwrap().unwrap();
+        let expected = std::fs::read(&out).unwrap();
+        std::fs::remove_file(&out).unwrap();
+        exclusive_write(&rotation_candidate_temporary(&rotation), b"{").unwrap();
+        rotate_with_id(&f.0, f.1, &out, 3600, 0, Some(id)).unwrap();
+        assert_eq!(std::fs::read(&out).unwrap(), expected);
+        assert!(!rotation_candidate_temporary(&rotation).exists());
+        assert_eq!(load(&f.0).unwrap().seats[&f.1].nonce, rotation.nonce);
     }
 
     #[test]
