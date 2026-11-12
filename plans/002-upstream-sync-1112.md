@@ -436,3 +436,25 @@ The setup/UID briefs authorize implementation; the hosts brief changes its insta
 The helper stages only the existing protocol and never starts services or creates users. Ops provisions fleet-bridge (nologin/no sudo) on both hosts, ai endpoints and a client group. Use protected /var/lib and /etc roots; the existing proxy rejects an ai-owned home as a private-key/config parent. Reserve the same numerical service UID on both hosts for the supplied routes schema's single service_uid. Only the four specified cross-seat edges are granted; self scope remains necessary for existing sync/inbox calls. Generate key-specific restricted SSH admission through ai's existing sshd login and an exact Ops sudoers command to execute remote-entry as fleet-bridge; the service account has no sudo permission. Bindings are service-owned 0640, endpoint credentials/ledgers ai-owned 0600/0700. Real thread IDs are supplied explicitly, routes stay disabled pending owner smoke/cutover, and a stock running session cannot gain fork hooks through an environment change.
 
 Proof: rerun the complete setup fixture with production 1112c/bin binaries, distinct service/endpoint UIDs, private /tmp, /run and sudoers mounts, actual loopback OpenSSH and the generated forced sudo command. Prove three enrollments, all four edges/receipts, both forbidden cross-seat directions, same-state serve restart/replay with exactly four records and no duplicated delivery, routes filled from supplied UUIDs, modes and repeated-init refusal. Record output in the tracked runbook and this plan; seal those assets and setup results through package.py, with original host proofs preserved and program hashes unchanged. No real host/service/account action. Then write plan 003 and stop for review as originally ordered.
+
+### Setup proof result
+
+Canonical setup, fixture and runbook source: `0228883c1b`. The package contains setup-forge-box.py, test-setup-forge-box.py and SETUP.md copied only through package.py; all match their tracked sources byte-for-byte. The helper's explicit init/bootstrap/enroll/routes/proof steps never start a service or create an account. Actual native thread IDs remain an operator input; routes stay disabled, and the real stock pilot needs an owner-controlled fork restart.
+
+```text
+$ sudo -n unshare --mount --propagation private python3 <isolated NVMe directory>/entry.py
+$ # entry.py provides private /tmp and /run and executes:
+$ python3 -B dist/1112c/test-setup-forge-box.py --root /tmp/setup-proof-1112c --dist /srv/stacks/codex/dist/1112c
+Setup fixture exit: 0
+passed=true; seats=3; directedEdges=4
+durableMessagesAfterRestart=4; receiptsPerMessage=2
+serviceUid=65534; endpointUid=65532; modelsStarted=0
+transport="actual loopback OpenSSH; generated sudo forced command; one kernel"
+realFleetHostsTested=false
+```
+
+All seven setup checks PASS: init stages three seats with no listeners and repeated init refuses without registry mutation; the generated restricted SSH/sudo entry runs a nologin service account; three real enrollments include the remote pilot via connect-host; every allowed direction sends/receives with service/inbox receipts; both ungranted direct spec/pilot directions fail; same-state serve restart plus exact-UUID resend/re-receive retains four records and one delivery receipt each; disabled routes have all supplied UUIDs and correct binding/credential owners/modes. Full actual stdout is pasted in SETUP.md as requested. The fixture's root SSH frontend and one kernel do not prove production ai sudoers admission, systemd units, physical-host routing/firewall/host pins or the live native cutover. No live host/service/account was changed.
+
+The owner runbook lists the per-host ucs-ops account/group request, every directory/file owner/group/mode, exact system units and commands by actor, the generated forced SSH/sudoers lines, local/remote enrollment, explicit message/restart proof, native binding environment, thread/factoryMessage wake/defer/reconciliation, current stock-session limitation and finite lease maintenance. A dedicated proxy UID is required on dev-3. Matching numerical fleet-bridge UIDs are required by the supplied routes schema. Service state/config use /var/lib and /etc because the existing proxy rejects an ai-owned parent. The package gate's six regressions still pass after adding operator assets; no Rust file changed. Original host qualification is preserved in MANIFEST.json together with setup's PASS. Program hashes remain codex `87b000eb4f2b…`, code-mode-host `1b3567c03089…`; all package checksums are reverified after sealing.
+
+Cleanup PASS: removed only the two task-owned setup scratch directories `/srv/stacks/codex-setup-tmp-1112b` and `/srv/stacks/codex-setup-tmp-1112c`, including synthetic keys/state/logs. Neither fixture namespace retained a process; the host /tmp remains tmpfs. The final package preserves both older dist folders; only 1112c gained the requested operator assets.
