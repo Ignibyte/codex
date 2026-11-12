@@ -24,7 +24,7 @@ class CompletePackageTests(unittest.TestCase):
         for binary in gate.upstream_contract()['binaries'] + ['codex-factory-bridge']:
             if not (self.package / 'bin' / binary).exists():
                 shutil.copy2(self.source, self.package / 'bin' / binary)
-        for relative in gate.upstream_contract()['shippedFiles']:
+        for relative in gate.upstream_contract()['shippedFiles'] + gate.FORK_FILES:
             path = self.package / relative
             if relative == 'codex':
                 path.symlink_to('bin/codex')
@@ -35,7 +35,7 @@ class CompletePackageTests(unittest.TestCase):
     def test_each_required_file_is_a_release_blocker(self):
         self.assertTrue(gate.check(self.package)['passed'])
         required = set(gate.upstream_contract()['upstreamFiles'] + gate.upstream_contract()['shippedFiles']
-                       + ['bin/codex-factory-bridge'])
+                       + gate.FORK_FILES)
         for relative in sorted(required):
             file = self.package / relative
             content, mode = file.read_bytes(), file.stat().st_mode

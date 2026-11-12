@@ -1,0 +1,11 @@
+[Unit]
+Description=Renew allowlisted fleet bridge credentials before expiry
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=5min
+AccuracySec=5s
+Unit=fleet-manager-bridge-renew.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,21 @@
+[Unit]
+Description=Renew explicitly allowlisted fleet bridge authority
+Requires=fleet-manager-bridge.service
+After=fleet-manager-bridge.service network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/
+UMask=0077
+ExecStart=/usr/bin/python3 -I @PACKAGE@/setup-forge-box.py renew --config /etc/fleet-manager-bridge-renew.json
+TimeoutStartSec=120
+KillMode=control-group
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ReadWritePaths=/var/lib/fleet-manager-bridge /var/lib/fleet-manager-bridge-renew /etc/fleet-manager-bridge/credentials

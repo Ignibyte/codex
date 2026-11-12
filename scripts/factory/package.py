@@ -19,6 +19,7 @@ sys.path.insert(0, str(REPO / 'third_party/voice'))
 from assemble_package import assemble
 from package_runtime import runtime_files
 
+REQUIRED_BWRAP = 'bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023'
 
 def run(args, *, cwd=REPO, env=None):
     subprocess.run(list(map(str, args)), cwd=cwd, env=env, check=True)
@@ -67,6 +68,10 @@ def operator_assets(directory):
                          ('scripts/factory/test-setup-forge-box.py', 'test-setup-forge-box.py'),
                          ('docs/factory-setup.md', 'SETUP.md')]:
         shutil.copy2(REPO / source, directory / name)
+    units = directory / 'systemd'
+    units.mkdir(exist_ok=True)
+    for name in ('fleet-manager-bridge-renew.service.in', 'fleet-manager-bridge-renew.timer.in'):
+        shutil.copy2(REPO / 'scripts/factory/systemd' / name, units / name)
 
 
 def packaging_hashes():
@@ -176,6 +181,8 @@ def main():
         bwrap = work / 'bwrap'; shutil.copy2(native / 'bwrap', bwrap)
         run(['strip', '--strip-debug', '--strip-unneeded', bwrap])
         env['CODEX_BWRAP_SHA256'] = digest(bwrap)
+        if env['CODEX_BWRAP_SHA256'] != REQUIRED_BWRAP:
+            raise RuntimeError('STOP: Part R bwrap digest changed: ' + env['CODEX_BWRAP_SHA256'])
         env.update(CODEX_FACTORY_REVISION=source, STABLE_GIT_COMMIT=source)
         metadata = json.loads(output(['cargo', 'metadata', '--locked', '--no-deps', '--format-version', '1'], cwd=REPO / 'codex-rs', env=env))
         owners = {t['name']: pkg['name'] for pkg in metadata['packages'] for t in pkg['targets'] if 'bin' in t['kind']}

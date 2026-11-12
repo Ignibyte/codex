@@ -88,9 +88,14 @@ def upstream_contract(target='x86_64-unknown-linux-gnu', repo=REPO):
                                  for p in (ACTION, ARCHIVE, Path('scripts/codex_package/layout.py'), SHIPPED)})
 
 
+FORK_FILES = ['bin/codex-factory-bridge', 'setup-forge-box.py', 'SETUP.md',
+              'systemd/fleet-manager-bridge-renew.service.in',
+              'systemd/fleet-manager-bridge-renew.timer.in']
+
+
 def check(directory, target='x86_64-unknown-linux-gnu', repo=REPO):
     contract = upstream_contract(target, repo=repo)
-    required = sorted(set(contract['upstreamFiles'] + contract['shippedFiles'] + ['bin/codex-factory-bridge']))
+    required = sorted(set(contract['upstreamFiles'] + contract['shippedFiles'] + FORK_FILES))
     missing = [p for p in required if not (directory / p).is_file()]
     executables = [p for p in required if p.startswith(('bin/', 'codex-path/', 'codex-resources/voice/bin/'))
                    or p in ('codex', 'codex-resources/bwrap')]
