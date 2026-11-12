@@ -630,36 +630,254 @@ fn audit(registry: &mut Registry, event: Value) {
         .push(json!({"sequence": registry.audit_sequence, "event": event}));
 }
 
-/// Trusted service-owner operation; neither credential is returned on stdout.
+// One bounded private record per seat; no bearer data enters stdout or audit.
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Rotation {
+    id: Uuid,
+    seat: Uuid,
+    grant: protocol::Grant,
+    base_nonce: String,
+    base_expires_at: u64,
+    nonce: String,
+    expires_at: u64,
+    started_at: u64,
+    overlap: u64,
+    output: std::path::PathBuf,
+    closed: bool,
+    managed: bool,
+}
+
+fn rotation_path(state: &Path, seat: Uuid) -> std::path::PathBuf {
+    state.join(format!("rotation-{seat}.json"))
+}
+
+fn replace_private(path: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = path.parent().context("rotation_parent_missing")?;
+    let temporary = parent.join(format!(".rotation-{}", Uuid::new_v4()));
+    let result = (|| {
+        exclusive_write(&temporary, bytes)?;
+        std::fs::rename(&temporary, path)?;
+        File::open(parent)?.sync_all()?;
+        Ok(())
+    })();
+    if temporary.exists() {
+        let _ = std::fs::remove_file(temporary);
+    }
+    result
+}
+
+fn read_rotation(state: &Path, seat: Uuid) -> Result<Option<Rotation>> {
+    let path = rotation_path(state, seat);
+    if !path.try_exists()? {
+        return Ok(None);
+    }
+    let rotation: Rotation = serde_json::from_slice(&private_read(&path, 65536)?)?;
+    ensure!(
+        rotation.seat == seat && !rotation.id.is_nil(),
+        "rotation_identity_invalid"
+    );
+    Ok(Some(rotation))
+}
+
+fn cleanup_rotation_output(state: &Path, rotation: &Rotation) -> Result<()> {
+    if rotation.output.try_exists()? {
+        let value: Value = serde_json::from_slice(&private_read(&rotation.output, 65536)?)?;
+        let expected = hex(&mac_for(
+            &key(state)?,
+            &rotation.grant,
+            &rotation.nonce,
+            rotation.expires_at,
+        )?
+        .finalize()
+        .into_bytes());
+        ensure!(
+            value["seat"] == json!(rotation.seat) && value["credential"] == expected,
+            "rotation_output_conflict"
+        );
+        std::fs::remove_file(&rotation.output)?;
+        File::open(
+            rotation
+                .output
+                .parent()
+                .context("rotation_parent_missing")?,
+        )?
+        .sync_all()?;
+    }
+    Ok(())
+}
+
+pub fn rotation_status(state: &Path, seat: Uuid) -> Result<Value> {
+    let _lock = lock(state)?;
+    lifecycle::check_boot(state)?;
+    let Some(rotation) = read_rotation(state, seat)? else {
+        return Ok(json!({"ok":true,"pending":false}));
+    };
+    let registry = load(state)?;
+    let record = registry.seats.get(&seat).context("seat_unknown")?;
+    Ok(
+        json!({"ok":true,"pending":!rotation.closed,"rotationId":rotation.id,
+        "seat":seat,"expiresAt":rotation.expires_at,"credentialFile":rotation.output,
+        "committed":record.nonce == rotation.nonce && record.expires_at == rotation.expires_at,
+        "revoked":record.revoked}),
+    )
+}
+
+/// Compatibility entry: a legacy caller still publishes its own returned file.
 pub fn rotate(state: &Path, seat: Uuid, output: &Path, ttl: u64, overlap: u64) -> Result<Value> {
+    rotate_with_id(state, seat, output, ttl, overlap, None)
+}
+
+pub fn rotate_with_id(
+    state: &Path,
+    seat: Uuid,
+    output: &Path,
+    ttl: u64,
+    overlap: u64,
+    id: Option<Uuid>,
+) -> Result<Value> {
     ensure!(
         (1..=3600).contains(&ttl) && overlap <= 60,
         "credential_ttl_bound"
     );
+    ensure!(output.is_absolute(), "rotation_output_absolute_required");
     let _lock = lock(state)?;
+    lifecycle::check_boot(state)?;
     let mut registry = load(state)?;
-    let record = registry.seats.get_mut(&seat).context("seat_unknown")?;
+    let time = now()?.max(registry.observed_time);
+    let record = registry.seats.get(&seat).context("seat_unknown")?;
     ensure!(!record.revoked, "credential_revoked");
-    let time = now()?;
-    record.previous = Some(Previous {
-        nonce: record.nonce.clone(),
-        expires_at: record.expires_at,
-        valid_until: (time + overlap).min(record.expires_at),
-    });
-    record.nonce = hex(&random()?);
-    record.expires_at = time + ttl;
-    let credential = hex(&signature(&key(state)?, record)?.finalize().into_bytes());
-    let response = json!({"ok":true,"seat":seat,"incarnation":record.grant.incarnation,
-        "expiresAt":record.expires_at,"credential":credential});
-    exclusive_write(output, &serde_json::to_vec(&response)?)?;
-    File::open(output.parent().context("output_parent_missing")?)?.sync_all()?;
-    audit(
-        &mut registry,
-        json!({"kind":"rotated","seat":seat,"at":time,"overlapSeconds":overlap,
-        "grant":"preserved","sequence":"preserved"}),
+    let legacy = id.is_none();
+    let id = id.unwrap_or_else(Uuid::new_v4);
+    ensure!(!id.is_nil(), "rotation_identity_invalid");
+    let previous = read_rotation(state, seat)?;
+    let mut rotation = if let Some(previous) = previous.filter(|r| r.id == id) {
+        ensure!(
+            previous.output == output
+                && previous.overlap == overlap
+                && previous.expires_at == previous.started_at.saturating_add(ttl),
+            "rotation_request_conflict"
+        );
+        previous
+    } else {
+        if let Some(previous) = read_rotation(state, seat)? {
+            ensure!(previous.closed, "rotation_pending");
+            if previous.managed {
+                cleanup_rotation_output(state, &previous)?;
+            }
+        }
+        ensure!(!output.try_exists()?, "rotation_output_exists");
+        let rotation = Rotation {
+            id,
+            seat,
+            grant: record.grant.clone(),
+            base_nonce: record.nonce.clone(),
+            base_expires_at: record.expires_at,
+            nonce: hex(&random()?),
+            expires_at: time.checked_add(ttl).context("credential_time_exhausted")?,
+            started_at: time,
+            overlap,
+            output: output.to_path_buf(),
+            closed: false,
+            managed: !legacy,
+        };
+        replace_private(&rotation_path(state, seat), &serde_json::to_vec(&rotation)?)?;
+        fixture_fault(state, "rotation_after_prepare")?;
+        rotation
+    };
+    ensure!(
+        serde_json::to_value(&rotation.grant)? == serde_json::to_value(&record.grant)?,
+        "rotation_grant_changed"
     );
-    save(state, &registry)?;
-    Ok(json!({"seat":seat,"credentialFile":output,"overlapSeconds":overlap}))
+    let committed = record.nonce == rotation.nonce && record.expires_at == rotation.expires_at;
+    if !committed {
+        ensure!(
+            !rotation.closed
+                && record.nonce == rotation.base_nonce
+                && record.expires_at == rotation.base_expires_at,
+            "rotation_superseded"
+        );
+        ensure!(rotation.expires_at > time, "rotation_expired_uncommitted");
+        let record = registry.seats.get_mut(&seat).context("seat_unknown")?;
+        record.previous = Some(Previous {
+            nonce: rotation.base_nonce.clone(),
+            expires_at: rotation.base_expires_at,
+            valid_until: rotation
+                .started_at
+                .saturating_add(overlap)
+                .min(rotation.base_expires_at),
+        });
+        record.nonce = rotation.nonce.clone();
+        record.expires_at = rotation.expires_at;
+        registry.observed_time = time;
+        audit(
+            &mut registry,
+            json!({"kind":"rotated","seat":seat,"rotationId":id,
+            "at":rotation.started_at,"overlapSeconds":overlap,"grant":"preserved","sequence":"preserved"}),
+        );
+        save(state, &registry)?;
+        fixture_fault(state, "rotation_after_commit")?;
+    }
+    ensure!(rotation.expires_at > time, "rotation_expired");
+    let record = registry.seats.get(&seat).context("seat_unknown")?;
+    let credential = hex(&signature(&key(state)?, record)?.finalize().into_bytes());
+    let bytes = serde_json::to_vec(&json!({"ok":true,"seat":seat,
+        "incarnation":record.grant.incarnation,"expiresAt":record.expires_at,"credential":credential}))?;
+    if output.try_exists()? {
+        ensure!(
+            private_read(output, 65536)? == bytes,
+            "rotation_output_conflict"
+        );
+    } else {
+        exclusive_write(output, &bytes)?;
+        File::open(output.parent().context("rotation_parent_missing")?)?.sync_all()?;
+    }
+    fixture_fault(state, "rotation_after_output")?;
+    if legacy && !rotation.closed {
+        rotation.closed = true;
+        replace_private(&rotation_path(state, seat), &serde_json::to_vec(&rotation)?)?;
+    }
+    Ok(
+        json!({"ok":true,"seat":seat,"rotationId":id,"credentialFile":output,
+        "expiresAt":rotation.expires_at,"overlapSeconds":overlap,"committed":true}),
+    )
+}
+
+pub fn finish_rotation(state: &Path, seat: Uuid, id: Uuid, abandon_expired: bool) -> Result<Value> {
+    let _lock = lock(state)?;
+    lifecycle::check_boot(state)?;
+    let registry = load(state)?;
+    let record = registry.seats.get(&seat).context("seat_unknown")?;
+    ensure!(!record.revoked, "credential_revoked");
+    let mut rotation = read_rotation(state, seat)?.context("rotation_missing")?;
+    ensure!(
+        rotation.id == id
+            && serde_json::to_value(&rotation.grant)? == serde_json::to_value(&record.grant)?,
+        "rotation_identity_invalid"
+    );
+    let committed = record.nonce == rotation.nonce && record.expires_at == rotation.expires_at;
+    let expired = rotation.expires_at <= now()?.max(registry.observed_time);
+    ensure!(
+        if abandon_expired {
+            expired
+        } else {
+            committed && !expired
+        },
+        "rotation_finish_denied"
+    );
+    if !committed {
+        ensure!(
+            record.nonce == rotation.base_nonce && record.expires_at == rotation.base_expires_at,
+            "rotation_superseded"
+        );
+    }
+    fixture_fault(state, "rotation_before_close")?;
+    rotation.closed = true;
+    replace_private(&rotation_path(state, seat), &serde_json::to_vec(&rotation)?)?;
+    if rotation.managed {
+        cleanup_rotation_output(state, &rotation)?;
+    }
+    Ok(json!({"ok":true,"seat":seat,"rotationId":id,"closed":true,"expired":expired}))
 }
 
 pub fn revoke(state: &Path, seat: Uuid) -> Result<Value> {
@@ -982,6 +1200,38 @@ pub fn admit_host(
     );
     save(state, &registry)?;
     Ok(json!({"ok":true,"host":host,"keyId":key_id,"expiresAt":expires}))
+}
+
+/// Renewal is not key rotation: preserve the admitted host and its current key.
+pub fn renew_host(state: &Path, host: Uuid, key_id: Uuid, ttl: u64) -> Result<Value> {
+    ensure!(
+        !host.is_nil() && !key_id.is_nil() && (1..=86400).contains(&ttl),
+        "host_renewal_bound"
+    );
+    let _lock = lock(state)?;
+    lifecycle::check_boot(state)?;
+    let mut registry = load(state)?;
+    let time = now()?.max(registry.observed_time);
+    let record = registry
+        .remote_hosts
+        .get_mut(&host)
+        .context("host_not_admitted")?;
+    ensure!(
+        !record.revoked && record.current_key == key_id,
+        "host_renewal_denied"
+    );
+    let expires = record
+        .expires_at
+        .max(time.checked_add(ttl).context("host_time_exhausted")?);
+    record.expires_at = expires;
+    registry.observed_time = time;
+    audit(
+        &mut registry,
+        json!({"kind":"host_renewed","host":host,"keyId":key_id,
+        "at":time,"expiresAt":expires,"keyChanged":false}),
+    );
+    save(state, &registry)?;
+    Ok(json!({"ok":true,"host":host,"keyId":key_id,"expiresAt":expires,"keyChanged":false}))
 }
 
 pub fn rotate_host(
@@ -1817,7 +2067,14 @@ fn handle(
             );
             auth.request.sequence = last.checked_add(1).context("sequence_exhausted")?;
             let grant = authenticated(&registry, &key, peer, &auth, time)?;
-            Ok(json!({"ok":true,"lastSequence":last,"grant":grant}))
+            let record = registry
+                .seats
+                .get(&auth.seat)
+                .context("credential_denied")?;
+            let current = signature(&key, record)?
+                .verify_slice(&unhex(&auth.credential)?)
+                .is_ok();
+            Ok(json!({"ok":true,"lastSequence":last,"grant":grant,"credentialCurrent":current}))
         }
         WireRequest::Status {
             auth, message_id, ..
@@ -2220,4 +2477,203 @@ pub fn serve(state: &Path, socket: &Path) -> Result<()> {
         let _ = stream.write_all(&bytes);
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod renewal_tests {
+    use super::*;
+
+    struct Fixture(std::path::PathBuf, Uuid);
+    impl Fixture {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!("factory-renew-{}", Uuid::new_v4()));
+            let seat = Uuid::new_v4();
+            let host = Uuid::new_v4();
+            let grant: protocol::Grant = serde_json::from_value(json!({
+                "seat":seat,"host":host,"incarnation":Uuid::new_v4(),"agentUid":uid()+1,
+                "role":"manager","projects":["fixture-project"],"recipients":[seat],"operations":["observe","queue"]
+            })).unwrap();
+            private_state(&root).unwrap();
+            let token = root.join("bootstrap");
+            bootstrap(&root, grant, &token, 60, 3600).unwrap();
+            let secret = String::from_utf8(private_read(&token, 1024).unwrap()).unwrap();
+            handle(
+                &root,
+                uid() + 1,
+                None,
+                WireRequest::Enroll {
+                    protocol: 1,
+                    bootstrap: secret,
+                },
+            )
+            .unwrap();
+            Self(root, seat)
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    #[test]
+    fn repeated_host_renewal_preserves_key_and_never_consumes_rotation_slots() {
+        let f = Fixture::new();
+        let remote = Uuid::new_v4();
+        let key_id = Uuid::new_v4();
+        admit_host(&f.0, remote, key_id, uid(), 1).unwrap();
+        for _ in 0..40 {
+            renew_host(&f.0, remote, key_id, 86400).unwrap();
+        }
+        let registry = load(&f.0).unwrap();
+        let host = &registry.remote_hosts[&remote];
+        assert_eq!(host.current_key, key_id);
+        assert_eq!(host.used_keys.len(), 1);
+        assert!(host.expires_at >= now().unwrap() + 86399);
+        assert!(renew_host(&f.0, remote, Uuid::new_v4(), 10).is_err());
+        assert!(renew_host(&f.0, remote, key_id, 86401).is_err());
+        revoke_host(&f.0, remote).unwrap();
+        assert!(renew_host(&f.0, remote, key_id, 86400).is_err());
+        assert!(renew_host(&f.0, Uuid::new_v4(), key_id, 86400).is_err());
+    }
+
+    #[test]
+    fn renewal_respects_clock_floor_and_does_not_shorten_lease() {
+        let f = Fixture::new();
+        let remote = Uuid::new_v4();
+        let key_id = Uuid::new_v4();
+        admit_host(&f.0, remote, key_id, uid(), 86400).unwrap();
+        let before = load(&f.0).unwrap().remote_hosts[&remote].expires_at;
+        renew_host(&f.0, remote, key_id, 1).unwrap();
+        assert!(load(&f.0).unwrap().remote_hosts[&remote].expires_at >= before);
+        let mut registry = load(&f.0).unwrap();
+        registry.observed_time = now().unwrap() + 100;
+        save(&f.0, &registry).unwrap();
+        renew_host(&f.0, remote, key_id, 86400).unwrap();
+        assert!(
+            load(&f.0).unwrap().remote_hosts[&remote].expires_at >= registry.observed_time + 86400
+        );
+    }
+
+    #[test]
+    fn rotation_retry_reconstructs_missing_output_without_new_nonce_or_audit() {
+        let f = Fixture::new();
+        let id = Uuid::new_v4();
+        let out = f.0.join("rotated");
+        let before = load(&f.0).unwrap();
+        rotate_with_id(&f.0, f.1, &out, 3600, 60, Some(id)).unwrap();
+        let first = private_read(&out, 65536).unwrap();
+        let after = load(&f.0).unwrap();
+        std::fs::remove_file(&out).unwrap();
+        rotate_with_id(&f.0, f.1, &out, 3600, 60, Some(id)).unwrap();
+        assert_eq!(first, private_read(&out, 65536).unwrap());
+        let retried = load(&f.0).unwrap();
+        assert_eq!(after.seats[&f.1].nonce, retried.seats[&f.1].nonce);
+        assert_eq!(after.audit.len(), retried.audit.len());
+        assert_eq!(
+            before.seats[&f.1].last_sequence,
+            retried.seats[&f.1].last_sequence
+        );
+        assert!(
+            rotate_with_id(
+                &f.0,
+                f.1,
+                &f.0.join("other"),
+                3600,
+                60,
+                Some(Uuid::new_v4())
+            )
+            .is_err()
+        );
+        finish_rotation(&f.0, f.1, id, false).unwrap();
+        rotate_with_id(
+            &f.0,
+            f.1,
+            &f.0.join("other"),
+            3600,
+            60,
+            Some(Uuid::new_v4()),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn prepared_rotation_resumes_once_and_refuses_revoked_or_changed_request() {
+        let f = Fixture::new();
+        let id = Uuid::new_v4();
+        let out = f.0.join("rotated");
+        let registry = load(&f.0).unwrap();
+        let record = &registry.seats[&f.1];
+        let rotation = Rotation {
+            id,
+            seat: f.1,
+            grant: record.grant.clone(),
+            base_nonce: record.nonce.clone(),
+            base_expires_at: record.expires_at,
+            nonce: hex(&random().unwrap()),
+            expires_at: now().unwrap() + 3600,
+            started_at: now().unwrap(),
+            overlap: 60,
+            output: out.clone(),
+            closed: false,
+            managed: true,
+        };
+        replace_private(
+            &rotation_path(&f.0, f.1),
+            &serde_json::to_vec(&rotation).unwrap(),
+        )
+        .unwrap();
+        rotate_with_id(&f.0, f.1, &out, 3600, 60, Some(id)).unwrap();
+        assert!(rotate_with_id(&f.0, f.1, &f.0.join("wrong"), 3600, 60, Some(id)).is_err());
+        revoke(&f.0, f.1).unwrap();
+        assert!(rotate_with_id(&f.0, f.1, &out, 3600, 60, Some(id)).is_err());
+        assert!(finish_rotation(&f.0, f.1, id, false).is_err());
+    }
+
+    #[test]
+    fn expired_committed_rotation_cannot_reconstruct_a_candidate() {
+        let f = Fixture::new();
+        let id = Uuid::new_v4();
+        let out = f.0.join("expired-committed");
+        rotate_with_id(&f.0, f.1, &out, 1, 0, Some(id)).unwrap();
+        std::fs::remove_file(&out).unwrap();
+        let mut registry = load(&f.0).unwrap();
+        registry.observed_time = registry.seats[&f.1].expires_at;
+        save(&f.0, &registry).unwrap();
+        assert!(rotate_with_id(&f.0, f.1, &out, 1, 0, Some(id)).is_err());
+        assert!(!out.exists());
+        finish_rotation(&f.0, f.1, id, true).unwrap();
+    }
+
+    #[test]
+    fn expired_preparation_can_be_closed_but_not_published() {
+        let f = Fixture::new();
+        let id = Uuid::new_v4();
+        let out = f.0.join("expired");
+        let registry = load(&f.0).unwrap();
+        let record = &registry.seats[&f.1];
+        let rotation = Rotation {
+            id,
+            seat: f.1,
+            grant: record.grant.clone(),
+            base_nonce: record.nonce.clone(),
+            base_expires_at: record.expires_at,
+            nonce: hex(&random().unwrap()),
+            expires_at: now().unwrap() - 1,
+            started_at: now().unwrap() - 2,
+            overlap: 0,
+            output: out.clone(),
+            closed: false,
+            managed: true,
+        };
+        replace_private(
+            &rotation_path(&f.0, f.1),
+            &serde_json::to_vec(&rotation).unwrap(),
+        )
+        .unwrap();
+        assert!(rotate_with_id(&f.0, f.1, &out, 1, 0, Some(id)).is_err());
+        assert!(!out.exists());
+        finish_rotation(&f.0, f.1, id, true).unwrap();
+        rotate_with_id(&f.0, f.1, &out, 3600, 0, Some(Uuid::new_v4())).unwrap();
+    }
 }

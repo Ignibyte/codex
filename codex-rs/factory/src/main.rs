@@ -167,6 +167,17 @@ enum Command {
         ttl: u64,
     },
     #[cfg(target_os = "linux")]
+    RenewHost {
+        #[arg(long)]
+        state: PathBuf,
+        #[arg(long)]
+        host: uuid::Uuid,
+        #[arg(long)]
+        key_id: uuid::Uuid,
+        #[arg(long, default_value_t = 86400)]
+        ttl: u64,
+    },
+    #[cfg(target_os = "linux")]
     RotateHost {
         #[arg(long)]
         state: PathBuf,
@@ -321,6 +332,24 @@ enum Command {
         message_id: uuid::Uuid,
     },
     #[cfg(target_os = "linux")]
+    RotationStatus {
+        #[arg(long)]
+        state: PathBuf,
+        #[arg(long)]
+        seat: uuid::Uuid,
+    },
+    #[cfg(target_os = "linux")]
+    FinishRotation {
+        #[arg(long)]
+        state: PathBuf,
+        #[arg(long)]
+        seat: uuid::Uuid,
+        #[arg(long)]
+        rotation_id: uuid::Uuid,
+        #[arg(long)]
+        abandon_expired: bool,
+    },
+    #[cfg(target_os = "linux")]
     Rotate {
         #[arg(long)]
         state: PathBuf,
@@ -332,6 +361,8 @@ enum Command {
         credential_ttl: u64,
         #[arg(long, default_value_t = 0)]
         overlap_seconds: u64,
+        #[arg(long)]
+        rotation_id: Option<uuid::Uuid>,
     },
     #[cfg(target_os = "linux")]
     RouteGrant {
@@ -616,6 +647,18 @@ fn main() -> Result<()> {
             );
         }
         #[cfg(target_os = "linux")]
+        Command::RenewHost {
+            state,
+            host,
+            key_id,
+            ttl,
+        } => {
+            println!(
+                "{}",
+                codex_factory::service::renew_host(&state, host, key_id, ttl)?
+            );
+        }
+        #[cfg(target_os = "linux")]
         Command::RotateHost {
             state,
             host,
@@ -787,15 +830,37 @@ fn main() -> Result<()> {
             )?
         ),
         #[cfg(target_os = "linux")]
+        Command::RotationStatus { state, seat } => {
+            println!("{}", codex_factory::service::rotation_status(&state, seat)?)
+        }
+        #[cfg(target_os = "linux")]
+        Command::FinishRotation {
+            state,
+            seat,
+            rotation_id,
+            abandon_expired,
+        } => println!(
+            "{}",
+            codex_factory::service::finish_rotation(&state, seat, rotation_id, abandon_expired)?
+        ),
+        #[cfg(target_os = "linux")]
         Command::Rotate {
             state,
             seat,
             output,
             credential_ttl,
             overlap_seconds,
+            rotation_id,
         } => println!(
             "{}",
-            codex_factory::service::rotate(&state, seat, &output, credential_ttl, overlap_seconds)?
+            codex_factory::service::rotate_with_id(
+                &state,
+                seat,
+                &output,
+                credential_ttl,
+                overlap_seconds,
+                rotation_id
+            )?
         ),
         #[cfg(target_os = "linux")]
         Command::RouteGrant { state, input } => println!(
