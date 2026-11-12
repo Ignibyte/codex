@@ -308,8 +308,8 @@ def operator(a):
         service = Path(m['stateRoot']) / 'service'
         admitted = bridge(binary, 'inspect', '--state', service)['remoteHosts'].get(m['remoteHost'])
         if admitted:
-            require(not admitted['revoked'] and admitted['current_key'] == m['transportKey']
-                    and admitted['bridge_uid'] == m['remoteServiceUid'], 'remote_admission_conflict')
+            require(not admitted['revoked'] and admitted['currentKey'] == m['transportKey']
+                    and admitted['bridgeUid'] == m['remoteServiceUid'], 'remote_admission_conflict')
             bridge(binary, 'renew-host', '--state', service, '--host', m['remoteHost'],
                    '--key-id', m['transportKey'], '--ttl', 86400)
         else:
@@ -347,7 +347,11 @@ def operator(a):
 
 
 class RenewalFailure(RuntimeError):
-    def __init__(self, code, seat='none', rotation='none'):
+    def __init__(self, code, seat='none', rotation='none', host='none'):
+        if isinstance(code, OSError): code = 'os_error_' + str(code.errno or 0)
+        elif isinstance(code, subprocess.TimeoutExpired): code = 'renewal_child_timeout'
+        elif isinstance(code, subprocess.SubprocessError): code = 'renewal_child_identity_failed'
+        else: code = str(code)
         self.code = code if re.fullmatch('[a-z][a-z0-9_]*', code) else 'renewal_operation_failed'
         def identifier(value):
             try:
@@ -355,6 +359,7 @@ class RenewalFailure(RuntimeError):
             except (ValueError, TypeError, AttributeError):
                 return 'none'
         self.seat, self.rotation = identifier(seat), identifier(rotation)
+        self.host = identifier(host)
 
 
 def rooted(path, *, private=False, directory_only=False):
@@ -533,12 +538,15 @@ def renew(c):
         for expected in c['hosts']:
             host = snapshot['remoteHosts'].get(expected['host'])
             if host is None: continue  # Deferred means no implicit admission.
-            require(not host['revoked'] and host['current_key'] == expected['keyId']
-                    and host['bridge_uid'] == expected['bridgeUid'], 'renewal_host_identity')
-            if host['expires_at'] <= now + c['hostRenewBefore']:
-                administrative(c, 'renew-host', '--state', c['service']['state'], '--host', expected['host'],
-                               '--key-id', expected['keyId'], '--ttl', c['hostTtl'])
-                hosts.append(expected['host'])
+            try:
+                require(not host['revoked'] and host['currentKey'] == expected['keyId']
+                        and host['bridgeUid'] == expected['bridgeUid'], 'renewal_host_identity')
+                if host['expiresAt'] <= now + c['hostRenewBefore']:
+                    administrative(c, 'renew-host', '--state', c['service']['state'], '--host', expected['host'],
+                                   '--key-id', expected['keyId'], '--ttl', c['hostTtl'])
+                    hosts.append(expected['host'])
+            except Exception as exc:
+                raise RenewalFailure(exc, host=expected['host']) from None
         for entry in c['seats']:
             seat = entry['policy']['grant']['seat']; rotation = 'none'
             try:
@@ -578,7 +586,7 @@ def renew(c):
                 seats.append(dict(seat=seat, rotationId=rotation))
             except RenewalFailure: raise
             except Exception as exc:
-                raise RenewalFailure(str(exc), seat, rotation) from None
+                raise RenewalFailure(exc, seat, rotation) from None
         return dict(renewal='ok', hosts=hosts, seats=seats)
     finally:
         os.close(fd)
@@ -606,7 +614,10 @@ def render_renewal(a):
     if a.publisher_config:
         publisher = read(rooted(a.publisher_config, private=True))
         require(publisher['kind'] == 'ssh', 'publisher_config_kind')
+        require(a.publisher_public_key, 'publisher_public_key_required')
         c['seats'][-1]['publish'] = publisher
+    else:
+        require(not a.publisher_public_key, 'publisher_config_required')
     runtime = Path(c['runtimeRoot'])
     directory(runtime); rooted(runtime, directory_only=True)
     output = absolute(a.output); output.mkdir(mode=0o700)
@@ -618,8 +629,13 @@ def render_renewal(a):
         write(output / name, template, 0o644)
     publisher_policy = c['seats'][-1]['policy']
     write(output / 'pilot-publisher.json', publisher_policy, 0o644)
-    command = f'/usr/bin/python3 -I {package}/setup-forge-box.py publish-credential --policy-file /etc/fleet-manager-bridge-publisher.json'
-    write(output / 'publisher-authorized-keys.template', 'restrict,command="' + command + '" ssh-ed25519 OPS_VERIFIED_PUBLISHER_PUBLIC_KEY fleet-credential-publisher\n', 0o644)
+    if a.publisher_config:
+        public = rooted(a.publisher_public_key).read_text().strip().split()
+        require(len(public) >= 2 and public[0] == 'ssh-ed25519' and re.fullmatch('[A-Za-z0-9+/=]+', public[1]),
+                'publisher_ed25519_public_key_required')
+        command = f'/usr/bin/python3 -I {package}/setup-forge-box.py publish-credential --policy-file /etc/fleet-manager-bridge-publisher.json'
+        write(output / 'publisher-authorized-keys.fragment', 'restrict,command="' + command + '" ' +
+              public[0] + ' ' + public[1] + ' fleet-credential-publisher\n', 0o644)
     return dict(rendered=True, allowlist=str(output / 'allowlist.json'), units=2, servicesStarted=0)
 
 def main():
@@ -655,7 +671,7 @@ def main():
         if cmd == 'renew': q.add_argument('--config', required=True)
         elif cmd == 'render-renewal':
             q.add_argument('--config-root', required=True); q.add_argument('--output', required=True)
-            q.add_argument('--publisher-config')
+            q.add_argument('--publisher-config'); q.add_argument('--publisher-public-key')
         elif cmd == 'credential-bytes': q.add_argument('--file', required=True)
         else:
             group = q.add_mutually_exclusive_group(required=True)
@@ -677,7 +693,7 @@ def main():
     if a.command == 'renew':
         try: result = renew(validate_allowlist(a.config))
         except RenewalFailure: raise
-        except Exception as exc: raise RenewalFailure(str(exc)) from None
+        except Exception as exc: raise RenewalFailure(exc) from None
         print(json.dumps(result)); return
     if a.command == 'preflight': result = dict(sandbox=sandbox_preflight(a.bin_dir), servicesStarted=0)
     elif a.command == 'init': result = initialize(a)
@@ -693,7 +709,7 @@ if __name__ == '__main__':
     try:
         main()
     except RenewalFailure as exc:
-        print(f'renewal_failed seat={exc.seat} rotation={exc.rotation} code={exc.code}', file=sys.stderr)
+        print(f'renewal_failed host={exc.host} seat={exc.seat} rotation={exc.rotation} code={exc.code}', file=sys.stderr)
         sys.exit(1)
     except SandboxPreconditionError as exc:
         print(str(exc), file=sys.stderr)

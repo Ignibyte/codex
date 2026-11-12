@@ -28,7 +28,7 @@ the existing proxy rejects an ai-owned ancestor of its protected config/key file
 
 | Path | Owner:group | Mode | Host |
 | --- | --- | --- | --- |
-| /opt/fleet-codex and package cae86561f52b67f029d4286d66a94b4f6e411cee-1112e, bin/, codex-path/, codex-resources/ | root:root | 0755 directories/executables; 0644 docs/metadata | both |
+| /opt/fleet-codex and package 453f5ee1190ded9792155d142ef751dcc3e13963-1112e, bin/, codex-path/, codex-resources/ | root:root | 0755 directories/executables; 0644 docs/metadata | both |
 | /var/lib/fleet-manager-bridge | fleet-bridge:fleet-bridge-clients | 2710 | both |
 | /var/lib/fleet-manager-bridge/run | fleet-bridge:fleet-bridge-clients | 2710 | both |
 | run/bridge.sock or run/remote.sock | fleet-bridge:fleet-bridge-clients | 0660, created by service | Forge / dev-3 |
@@ -55,7 +55,7 @@ Set these in each operator shell; they contain no secrets:
 
 ```sh
 # Both hosts — operator shell
-PKG=/opt/fleet-codex/cae86561f52b67f029d4286d66a94b4f6e411cee-1112e
+PKG=/opt/fleet-codex/453f5ee1190ded9792155d142ef751dcc3e13963-1112e
 BIN=$PKG/bin
 STATE=/var/lib/fleet-manager-bridge
 CFG=/etc/fleet-manager-bridge
@@ -65,7 +65,7 @@ After account creation, **Ops/root on each host** installs the whole verified
 folder from its received staging copy. `SOURCE` is that absolute copy, not bin/:
 
 ```sh
-# Both hosts — Ops/root; set SOURCE to the received whole dist/cae86561f52b67f029d4286d66a94b4f6e411cee-1112e folder
+# Both hosts — Ops/root; set SOURCE to the received whole dist/453f5ee1190ded9792155d142ef751dcc3e13963-1112e folder
 (cd "$SOURCE" && sha256sum -c SHA256SUMS)
 install -d -o root -g root -m 0755 /opt/fleet-codex
 test ! -e "$PKG"
@@ -95,7 +95,7 @@ python3 "$PKG/setup-forge-box.py" preflight --bin-dir "$BIN"
 ```
 
 The script reads `bwrapEmbeddedSha256` from `$PKG/MANIFEST.json`, verifies the
-actual file, and prints its installed path and full digest. For cae86561f52b67f029d4286d66a94b4f6e411cee-1112e the file is
+actual file, and prints its installed path and full digest. For 453f5ee1190ded9792155d142ef751dcc3e13963-1112e the file is
 `$PKG/codex-resources/bwrap`, SHA-256
 `bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023`.
 It runs `/usr/bin/true` through that exact bwrap with a read-only root and new
@@ -121,7 +121,7 @@ read-only/workspace-write turns on the actual hosts. No binary rebuild is needed
 
 ### Relocation and digest pins
 
-`/opt/fleet-codex/cae86561f52b67f029d4286d66a94b4f6e411cee-1112e` is this runbook's example input, not a compiled package
+`/opt/fleet-codex/453f5ee1190ded9792155d142ef751dcc3e13963-1112e` is this runbook's example input, not a compiled package
 location. The package uses relative bin/resource/path metadata; the bridge takes
 explicit state/socket/config paths; preflight derives bwrap and MANIFEST.json
 from the supplied absolute bin directory. Nothing in the runtime/setup requires
@@ -168,7 +168,7 @@ User=fleet-bridge
 Group=fleet-bridge
 SupplementaryGroups=fleet-bridge-clients
 UMask=0077
-ExecStart=/opt/fleet-codex/cae86561f52b67f029d4286d66a94b4f6e411cee-1112e/bin/codex-factory-bridge serve --state /var/lib/fleet-manager-bridge/service --socket /var/lib/fleet-manager-bridge/run/bridge.sock
+ExecStart=/opt/fleet-codex/453f5ee1190ded9792155d142ef751dcc3e13963-1112e/bin/codex-factory-bridge serve --state /var/lib/fleet-manager-bridge/service --socket /var/lib/fleet-manager-bridge/run/bridge.sock
 Restart=no
 KillMode=control-group
 TimeoutStopSec=10
@@ -202,7 +202,7 @@ Enroll within the 300-second bootstrap lifetime. If an unused bootstrap expires,
 
 ## 3. Install unattended renewals from the root-owned package
 
-Only Ops/root renders this staging folder. Rendering reads the service-owned setup/bindings once and freezes their public IDs, grants, service/endpoint UIDs/groups, socket/destination paths and code digests into root:0600 allowlist.json. Review that complete JSON in the Ops PR. The renewal unit never reloads setup.json, bindings or Python modules from a service/ai-owned directory. Its only configuration is the root-owned allowlist; it runs the root-owned packaged helper with Python -I and the pinned packaged bridge with a scrubbed environment, dropping to fleet-bridge for authority and to the configured endpoint UID for local publication. Python and SSH themselves are trusted system runtimes.
+Only Ops/root renders this staging folder. Rendering reads the service-owned setup/bindings once and freezes their public IDs, grants, service/endpoint UIDs/groups, socket/destination paths and code digests into root:0600 allowlist.json. Review that complete JSON in the Ops PR. The renewal unit never reloads setup.json, bindings or Python modules from a service/ai-owned directory. Its only configuration is the root-owned allowlist; it runs the root-owned packaged helper with Python -I and the pinned packaged bridge with a scrubbed environment, dropping to fleet-bridge for authority and to the configured endpoint UID for local publication. Python and SSH themselves are trusted system runtimes. The unit bounds its capabilities to SETUID/SETGID and explicitly retains those two for the required UID drop under NoNewPrivileges; children lose them when changing to the nonroot actor UID.
 
 ```sh
 # Forge — Ops/root, after the whole verified package is root-owned
@@ -231,10 +231,12 @@ User=root
 Group=root
 WorkingDirectory=/
 UMask=0077
-ExecStart=/usr/bin/python3 -I /opt/fleet-codex/cae86561f52b67f029d4286d66a94b4f6e411cee-1112e/setup-forge-box.py renew --config /etc/fleet-manager-bridge-renew.json
+ExecStart=/usr/bin/python3 -I /opt/fleet-codex/453f5ee1190ded9792155d142ef751dcc3e13963-1112e/setup-forge-box.py renew --config /etc/fleet-manager-bridge-renew.json
 TimeoutStartSec=120
 KillMode=control-group
 NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID
+AmbientCapabilities=CAP_SETUID CAP_SETGID
 PrivateTmp=yes
 ProtectHome=yes
 ProtectSystem=strict
@@ -266,7 +268,7 @@ Each seat has one private durable rotation record, an operation UUID and at most
 An operator sees a failed unit with Result=exit-code and ExecMainStatus=1. Its invocation emits one bounded line, for example:
 
 ```text
-renewal_failed seat=00000000-0000-4000-8000-000000000001 rotation=00000000-0000-4000-8000-000000000002 code=publication_candidate_not_current
+renewal_failed host=none seat=00000000-0000-4000-8000-000000000001 rotation=00000000-0000-4000-8000-000000000002 code=publication_candidate_not_current
 ```
 
 Unassociated IDs are printed as none. No bearer credential, nonce, command body or raw subprocess error is included. Inspect with systemctl status fleet-manager-bridge-renew.service and journalctl -u fleet-manager-bridge-renew.service. Correct the reviewed path/key/UID/config problem and start that same unit again. Do not hand-edit rotation/registry/credential files or clear pending state. Concurrent brokers refuse with renewal_already_running. The timer cannot undo a revoke or approve recovery.
@@ -282,7 +284,7 @@ python3 "$PKG/setup-forge-box.py" admit-remote --config-root "$CFG"
 
 It uses the saved host/key/seat/incarnation IDs, verifies an existing admission instead of replacing it, and preserves grants, messages and sequences. Default init without --defer-remote retains compatibility for offline fixtures; it is not the production R procedure. There is no need for dev-3 to Forge SSH.
 
-R's remote credential publisher is separate from mailbox transport. Ops may later supply render-renewal --publisher-config with a root:0600 JSON containing kind=ssh, a verified private literal address, port=22, endpoint login user, root:0600 identityFile and knownHosts, and hostKeyAlias. The allowlist pins these values. The key uses only the existing Forge to dev-3 route, a fixed codex-factory-publish-v1 forced command and encrypted stdin. It permits no forwarding, interactive command, SSH agent, proxy or user SSH config. Ops pins the target's public host key from trusted inventory. The helper stages pilot-publisher.json and a forced-key template for review; do not install a placeholder public key. The receiver executes the pinned root-owned packaged helper as the endpoint UID with the root-owned public policy file. No sudo is granted to ai. Lost acknowledgments retry the same current candidate. Leave the pilot deferred until its publisher and T are approved and installed.
+R's remote credential publisher is separate from mailbox transport. Ops may later supply render-renewal --publisher-config with a root:0600 JSON containing kind=ssh, a verified private literal address, port=22, endpoint login user, root:0600 identityFile and knownHosts, and hostKeyAlias. The allowlist pins these values. The key uses only the existing Forge to dev-3 route, a fixed codex-factory-publish-v1 forced command and encrypted stdin. It permits no forwarding, interactive command, SSH agent, proxy or user SSH config. Ops pins the target's public host key from trusted inventory. Supply --publisher-public-key with its root-owned verified ed25519 public file when rendering this configuration. The helper stages pilot-publisher.json and the complete publisher-authorized-keys.fragment with that actual key; it generates no placeholder key line when the pilot is deferred. Ops installs these reviewed files verbatim. The receiver executes the pinned root-owned packaged helper as the endpoint UID with the root-owned public policy file. No sudo is granted to ai. Lost acknowledgments retry the same current candidate. Leave the pilot deferred until its publisher and T are approved and installed.
 
 ## 5. Start an interactive fork seat without a mailbox binding
 

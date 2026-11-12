@@ -37,6 +37,9 @@ def run(args, *, uid=None, expected=0, timeout=30, payload=None, env=None):
 
 def fixture(a):
     assert os.geteuid() == 0 and os.path.exists('/run/systemd/system'), 'isolated systemd fixture required'
+    assert a.work_dir==Path('/work') and a.package==Path('/opt/fleet-codex/proof')
+    assert Path('/run/systemd/container').read_text().strip()=='systemd-nspawn'
+    assert Path('/etc/renewal-proof-id').read_text()==Path('/work/fixture-id').read_text(), 'owned fixture marker required'
     root, pkg = a.work_dir, a.package
     binary, helper = pkg / 'bin/codex-factory-bridge', pkg / 'setup-forge-box.py'
     cfg, state, runtime = Path('/etc/fleet-manager-bridge'), Path('/var/lib/fleet-manager-bridge'), Path('/run/fleet-manager-bridge')
@@ -59,7 +62,13 @@ def fixture(a):
         staged = setup('bootstrap', '--config-root', cfg, '--role', role)
         dst = cfg / 'credentials' / (role + '.bootstrap')
         shutil.copyfile(staged['bootstrapFile'], dst); os.chown(dst, AGENT, AGENT); dst.chmod(0o600)
-        assert setup('enroll', '--binding', binding(role), '--bootstrap', dst, uid=AGENT)['enrolled']
+        # The systemd container tests mailbox authority, not nested userns.
+        # Packaged sandbox preflight and the full endpoint CLI are proved in
+        # the separate mount-only setup fixture below, on the actual kernel.
+        result = command('/usr/bin/python3', REPO/'scripts/factory/isolation_client.py',
+                '--socket', runtime/'bridge.sock', '--bootstrap', dst,
+                '--credential-out', credential(role), uid=AGENT)
+        assert result['ok']
     def begin_hub():
         log = (root / 'hub.stderr').open('a')
         p = subprocess.Popen([str(binary), 'serve', '--state', str(state / 'service'), '--socket', str(runtime / 'bridge.sock')],
@@ -72,17 +81,32 @@ def fixture(a):
         p.wait(timeout=10)
         if p.stdout: p.stdout.close()
     def mailbox():
-        sent = setup('send', '--binding', binding('spec-manager'), '--bin-dir', pkg / 'bin',
-                     '--recipient', meta['seats']['foreman-bot'], uid=AGENT)
-        received = setup('receive', '--binding', binding('foreman-bot'), '--message', sent['messageId'], uid=AGENT)
+        sender=load(binding('spec-manager'))['grant']; receiver=load(binding('foreman-bot'))['grant']
+        outbox=state/'native/spec-manager'/('proof-'+uuid.uuid4().hex); directory(outbox,uid=AGENT)
+        now=int(time.time()); mid=str(uuid.uuid4())
+        envelope=dict(protocol=1,messageId=mid,conversationId=str(uuid.uuid4()),assignmentId=None,replyTo=None,
+              sender=sender['seat'],incarnation=sender['incarnation'],recipient=receiver['seat'],project=sender['projects'][0],
+              kind='note',mode='queue_only',createdAt=now,expiresAt=now+3600,text='Inert renewal proof.',artifactRefs=[])
+        for name,data in [('grant.json',sender),('envelope.json',envelope)]:
+            save(outbox/name,data); os.chown(outbox/name,AGENT,AGENT)
+        command(binary,'enqueue','--state',outbox/'outbox','--grant',outbox/'grant.json','--envelope',outbox/'envelope.json',uid=AGENT)
+        sent=command(binary,'relay','--state',outbox/'outbox','--grant',outbox/'grant.json','--socket',runtime/'bridge.sock',
+                     '--service-uid',SERVICE,'--credential',credential('spec-manager'),'--message-id',mid,uid=AGENT)
+        sequence=next(s['lastSequence'] for s in snapshot()['seats'] if s['seat']==receiver['seat'])+1
+        request=dict(protocol=1,sender=receiver['seat'],host=receiver['host'],incarnation=receiver['incarnation'],sequence=sequence,
+                     project=receiver['projects'][0],recipient=receiver['seat'],operation='observe')
+        wire=state/'native/foreman-bot'/('request-'+uuid.uuid4().hex+'.json')
+        save(wire,dict(method='receive',protocol=1,request=request,message_id=mid)); os.chown(wire,AGENT,AGENT)
+        received=command('/usr/bin/python3',REPO/'scripts/factory/isolation_client.py','--socket',runtime/'bridge.sock',
+                         '--credential',credential('foreman-bot'),'--wire',wire,uid=AGENT)
         assert sent['state'] == 'service_accepted' and len(received['receipts']) == 2
-        return sent['messageId']
+        return mid
     allowlist = Path('/etc/fleet-manager-bridge-renew.json')
     def broker(expected=0):
         p = run(['/usr/bin/python3', '-I', helper, 'renew', '--config', allowlist], expected=expected)
         if expected:
             line = p.stderr.decode().strip()
-            assert re.fullmatch(r'renewal_failed seat=(?:none|[0-9a-f-]{36}) rotation=(?:none|[0-9a-f-]{36}) code=[a-z][a-z0-9_]*', line), line
+            assert re.fullmatch(r'renewal_failed host=(?:none|[0-9a-f-]{36}) seat=(?:none|[0-9a-f-]{36}) rotation=(?:none|[0-9a-f-]{36}) code=[a-z][a-z0-9_]*', line), line
             assert not p.stdout
             for role in ('spec-manager', 'foreman-bot'):
                 assert load(credential(role))['credential'] not in line
@@ -217,11 +241,13 @@ def fixture(a):
         checks.append('concurrent_broker_wrong_code_uid_ttl_and_nonprivate_allowlist_fail_one_redacted_line')
         # Matching feature-gated fault binary; only this owned fixture copy is changed.
         production_bridge = root / 'production-bridge'; shutil.copy2(binary, production_bridge)
-        shutil.copyfile(a.fault_bridge, binary); binary.chmod(0o755)
+        replacement=binary.with_name('.fixture-bridge')
+        shutil.copyfile(a.fault_bridge,replacement); replacement.chmod(0o755); os.replace(replacement,binary)
         config['files']['bin/codex-factory-bridge'] = sha(binary)
         one = copy.deepcopy(config); one['seats'] = [one['seats'][0]]; one['seatTtl'] = 30; one['seatRenewBefore'] = 20
         save(allowlist, one)
-        for point in ('rotation_after_prepare', 'rotation_after_commit', 'rotation_after_output', 'rotation_before_close'):
+        points=['rotation_after_prepare', 'rotation_after_commit', 'rotation_before_output_rename', 'rotation_after_output', 'rotation_before_close']
+        for point in points:
             force_due('spec-manager')
             arm, hit = [state / 'service' / (prefix + point) for prefix in ('fault.', 'hit.')]
             arm.touch(mode=0o600); os.chown(arm, SERVICE, AGENT)
@@ -242,6 +268,7 @@ def fixture(a):
             checks.append('process_death_' + point + '_resumes_same_nonce_once')
         # Expiry during an outage abandons only the expired operation, then creates a fresh one.
         force_due('spec-manager'); one.update(seatTtl=2, seatRenewBefore=1); save(allowlist, one)
+        time.sleep(1.1)  # Make the two-second legacy lease due under the one-second threshold.
         arm = state / 'service/fault.rotation_after_commit'; hit = state / 'service/hit.rotation_after_commit'
         arm.touch(mode=0o600); os.chown(arm, SERVICE, AGENT)
         p = subprocess.Popen(['/usr/bin/python3', '-I', str(helper), 'renew', '--config', str(allowlist)],
@@ -254,7 +281,7 @@ def fixture(a):
         one.update(seatTtl=30, seatRenewBefore=20); save(allowlist, one)
         assert broker()['seats'][0]['rotationId'] != expired_id
         checks.append('outage_past_overlap_and_ttl_replaces_expired_pending_without_publishing_it')
-        shutil.copyfile(production_bridge, binary); binary.chmod(0o755)
+        shutil.copyfile(production_bridge,replacement); replacement.chmod(0o755); os.replace(replacement,binary)
         config['files']['bin/codex-factory-bridge'] = sha(binary); save(allowlist, config)
         # Run the actual generated service and an accelerated copy of its timer.
         stop(hub); (runtime / 'bridge.sock').unlink(missing_ok=True)
@@ -268,22 +295,56 @@ def fixture(a):
         for role in originals: force_due(role)
         before = snapshot()['auditSequence']
         run(['systemctl', 'daemon-reload']); run(['systemctl', 'start', 'fleet-manager-bridge-renew.timer'])
-        deadline=time.monotonic()+35
+        deadline=time.monotonic()+15
         while True:
             changed = [x['event'] for x in snapshot()['audit'] if x['sequence']>before and x['event']['kind']=='rotated']
             counts = {role:sum(x['seat']==meta['seats'][role] for x in changed) for role in originals}
             if min(counts.values()) >= 2: break
-            assert time.monotonic()<deadline, 'accelerated generated timer did not renew both local seats twice'
+            if time.monotonic()>=deadline:
+                status=subprocess.run(['systemctl','status','fleet-manager-bridge-renew.service','fleet-manager-bridge-renew.timer',
+                                       'fleet-manager-bridge.service','--no-pager'],capture_output=True)
+                journal=subprocess.run(['journalctl','-u','fleet-manager-bridge-renew.service','--no-pager','-o','cat'],capture_output=True)
+                (root/'timer-failure.log').write_bytes(status.stdout+status.stderr+journal.stdout+journal.stderr)
+                diagnostic = ('import runpy,traceback,json,os; os.umask(0o077); m=runpy.run_path('+repr(str(helper))+'); '
+                              'print("".join(x for x in open("/proc/self/status") if x.startswith(("Cap","NoNewPrivs"))));\n'
+                              'try: m["renew"](m["validate_allowlist"]('+repr(str(allowlist))+'))\n'
+                              'except Exception as e: print(json.dumps(dict(type=type(e).__name__,errno=getattr(e,"errno",None),'
+                              'frames=[dict(line=f.lineno,function=f.name) for f in traceback.extract_tb(e.__traceback__)])))\n')
+                probe=subprocess.run(['systemd-run','--wait','--pipe','--collect','--unit=renewal-diagnostic',
+                        '-p','NoNewPrivileges=yes','-p','ProtectHome=yes','-p','ProtectSystem=strict',
+                        '-p','PrivateTmp=yes','-p','UMask=0077','-p','User=root','-p','Group=root',
+                        '-p','ProtectKernelTunables=yes','-p','ProtectKernelModules=yes',
+                        '-p','ReadWritePaths=/var/lib/fleet-manager-bridge /var/lib/fleet-manager-bridge-renew /etc/fleet-manager-bridge/credentials',
+                        '/usr/bin/python3','-I','-c',diagnostic],capture_output=True,timeout=30)
+                (root/'timer-diagnostic.log').write_bytes(probe.stdout+probe.stderr)
+                raise AssertionError('accelerated generated timer did not renew both local seats twice')
             time.sleep(.25)
         assert snapshot()['remoteHosts'] == {}; mailbox()
         status = run(['systemctl', 'show', 'fleet-manager-bridge-renew.service', '-p', 'Result', '-p', 'ExecMainStatus']).stdout.decode()
         assert 'Result=success' in status and 'ExecMainStatus=0' in status
         run(['systemctl', 'stop', 'fleet-manager-bridge-renew.timer', 'fleet-manager-bridge-renew.service'])
         checks.append(dict(actualGeneratedSystemdService=True, acceleratedTimer=True, localRotations=counts, remoteHosts=0))
+        child_code=('import os,json; s=dict(x.split(":",1) for x in open("/proc/self/status") if ":" in x); '
+                    'print(json.dumps(dict(uid=os.geteuid(),caps={k:s[k].strip() for k in '
+                    '["CapEff","CapPrm","CapAmb","NoNewPrivs"]})))')
+        identity_code=('import runpy,json; m=runpy.run_path('+repr(str(helper))+'); '
+                      'c=m["validate_allowlist"]('+repr(str(allowlist))+'); '
+                      'print(json.dumps([json.loads(m["actor_run"](a,["/usr/bin/python3","-I","-c",'+repr(child_code)+'])) '
+                      'for a in [c["service"],c["seats"][0]["actor"]]]))')
+        identity=run(['systemd-run','--wait','--pipe','--collect','--unit=renewal-identities',
+                   '-p','User=root','-p','Group=root','-p','NoNewPrivileges=yes','-p','PrivateTmp=yes',
+                   '-p','CapabilityBoundingSet=CAP_SETUID CAP_SETGID','-p','AmbientCapabilities=CAP_SETUID CAP_SETGID',
+                   '/usr/bin/python3','-I','-c',identity_code])
+        identities=json.loads(identity.stdout)
+        assert [r['uid'] for r in identities]==[SERVICE,AGENT]
+        assert all(r['caps']['NoNewPrivs']=='1' and all(int(r['caps'][key],16)==0
+                   for key in ('CapEff','CapPrm','CapAmb')) for r in identities)
+        checks.append('root_unit_drops_to_real_service_endpoint_uids_without_effective_permitted_or_ambient_capabilities')
         # Later explicit admission uses reserved IDs and preserves every local seat/message.
         before = snapshot()
         admin('admit-host', '--state', state / 'service', '--host', meta['remoteHost'], '--key-id', meta['transportKey'], '--bridge-uid', SERVICE, '--ttl', 1)
         time.sleep(2); assert meta['remoteHost'] in broker()['hosts']
+        before = snapshot()
         setup('admit-remote', '--config-root', cfg)
         after = snapshot(); updated = load(cfg / 'setup.json')
         assert updated['seats']==identity['seats'] and updated['remoteHost']==identity['remoteHost'] and updated['transportKey']==identity['transportKey']
@@ -291,7 +352,7 @@ def fixture(a):
         assert updated['remoteHost'] in after['remoteHosts']
         for _ in range(40): admin('renew-host', '--state', state / 'service', '--host', meta['remoteHost'], '--key-id', meta['transportKey'], '--ttl', 86400)
         host = snapshot()['remoteHosts'][meta['remoteHost']]
-        assert len(host['used_keys']) == 1 and host['current_key']==meta['transportKey']
+        assert len(host['usedKeys']) == 1 and host['currentKey']==meta['transportKey']
         checks.append('explicit_later_admission_preserves_reserved_ids_and_mail_40_same_key_renewals_one_key_slot')
         admin('revoke-host', '--state', state / 'service', '--host', meta['remoteHost'])
         assert 'renewal_host_identity' in broker(expected=1)
@@ -332,7 +393,12 @@ def container_fixture(a):
     for name in ('lib','lib64','bin','sbin'): (root/name).symlink_to('usr/'+name)
     for name in ('os-release','passwd','group','nsswitch.conf'):
         if (Path('/etc')/name).exists(): shutil.copyfile(Path('/etc')/name, root/'etc'/name)
+    with (root/'etc/passwd').open('a') as f: f.write('renewal-agent:x:65532:65532:Offline fixture:/nonexistent:/usr/bin/nologin\n')
+    with (root/'etc/group').open('a') as f: f.write('renewal-agent:x:65532:\n')
     (root/'etc/machine-id').write_text(uuid.uuid4().hex+'\n')
+    marker=uuid.uuid4().hex+'\n'
+    for path in (root/'etc/renewal-proof-id',a.work_dir/'fixture-id'):
+        path.write_text(marker); path.chmod(0o600)
     pkg=root/'opt/fleet-codex/proof'
     run(['cp','-a','--reflink=auto',a.package,pkg],timeout=60)
     for path in [pkg,*pkg.rglob('*')]: os.chown(path,0,0,follow_symlinks=False)
@@ -343,6 +409,7 @@ def container_fixture(a):
     (a.work_dir/'container-tmp').mkdir(mode=0o1777); (a.work_dir/'container-tmp').chmod(0o1777)
     log=(a.work_dir/'systemd.log').open('w')
     p=subprocess.Popen(['systemd-nspawn','--quiet','--register=no','--settings=no','--resolv-conf=off','--private-network',
+            '--capability=CAP_SYS_ADMIN',
             '--directory='+str(root),'--bind-ro=/usr','--bind-ro='+str(REPO)+':/repo',
             '--bind='+str(a.work_dir)+':/work','--bind='+str(a.work_dir/'container-tmp')+':/tmp',
             '--boot','--','--log-target=console','--show-status=no'],stdout=log,stderr=log,start_new_session=True)
@@ -407,6 +474,10 @@ def pipeline(a):
     result['packagedTools']=proof('packaged-tools',['/usr/bin/python3',REPO/'scripts/factory/qualify_packaged_tools.py',
                        '--package',a.package,'--work-dir',root/'tools','--offline'])
     result['packagedTools']['results']=json.loads((root/'tools/results.json').read_text())
+    paths=['qualify_renewals.py','test-setup-forge-box.py','qualify_packaged_tools.py','fleet_fixture.py',
+           'native_fixture.py','session_fixture.py','isolation_client.py']
+    paths += ['qualify_'+name+'.py' for name in result['mailbox']]
+    result['proofScriptsSha256']={name:sha(REPO/'scripts/factory'/name) for name in paths}
     result.update(status='passed',externalModelRequests=0,externalFleetHostContacts=0,bwrapSha256=BWRAP)
     (root/'qualification.json').write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps(dict(status='passed',mailboxLanes=7,renewals=True,setup=True,packagedTools=True,
@@ -453,6 +524,10 @@ def main():
     a.work_dir.mkdir(mode=0o700)
     from check_package import check
     assert check(a.package)['passed'] and sha(a.package/'codex-resources/bwrap')==BWRAP
+    subprocess.run(['sha256sum','-c','SHA256SUMS'],cwd=a.package,stdout=subprocess.DEVNULL,check=True)
+    for relative in ('setup-forge-box.py','systemd/fleet-manager-bridge-renew.service.in',
+                     'systemd/fleet-manager-bridge-renew.timer.in'):
+        assert sha(a.package/relative)==sha(REPO/'scripts/factory'/relative), 'package operator assets differ from this branch'
     if a.full_package_proof:
         full_package_proof(a)
     else:

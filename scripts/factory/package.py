@@ -168,6 +168,8 @@ def main():
         env['CODEX_BWRAP_SHA256'] = digest(base / 'codex-resources/bwrap')
         if env['CODEX_BWRAP_SHA256'] != base_manifest['bwrapEmbeddedSha256']:
             raise RuntimeError('Base bwrap digest mismatch')
+        if env['CODEX_BWRAP_SHA256'] != REQUIRED_BWRAP:
+            raise RuntimeError('STOP: Part R bwrap digest changed: ' + env['CODEX_BWRAP_SHA256'])
         shutil.copytree(base, base_stage)
         (base_stage / 'MANIFEST.json').unlink(); (base_stage / 'SHA256SUMS').unlink()
     else:
