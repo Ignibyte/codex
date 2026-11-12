@@ -19,7 +19,11 @@ sys.path.insert(0, str(REPO / 'third_party/voice'))
 from assemble_package import assemble
 from package_runtime import runtime_files
 
-REQUIRED_BWRAP = 'bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023'
+def required_bwrap():
+    # Version metadata changes the rebuilt component bytes. Each release keeps
+    # an exact source-build expectation; Ops approves the installed path/digest.
+    return {'0.167.2+ignibyte.1112b':'bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023',
+            '0.167.2+ignibyte.1112f':'0ce4fa5b9da214841641f12032afa6cda3d93b45f321705fa8bde5fb2c270b74'}[read_workspace_version()]
 
 def run(args, *, cwd=REPO, env=None):
     subprocess.run(list(map(str, args)), cwd=cwd, env=env, check=True)
@@ -65,12 +69,13 @@ def seal(directory, manifest):
 
 def operator_assets(directory):
     for source, name in [('scripts/factory/setup-forge-box.py', 'setup-forge-box.py'),
+                         ('scripts/factory/fleet-bridge-ssh-entry.py', 'fleet-bridge-ssh-entry.py'),
                          ('scripts/factory/test-setup-forge-box.py', 'test-setup-forge-box.py'),
                          ('docs/factory-setup.md', 'SETUP.md')]:
         shutil.copy2(REPO / source, directory / name)
     units = directory / 'systemd'
     units.mkdir(exist_ok=True)
-    for name in ('fleet-manager-bridge-renew.service.in', 'fleet-manager-bridge-renew.timer.in'):
+    for name in ('fleet-manager-bridge-renew.service.in', 'fleet-manager-bridge-renew.timer.in', 'fleet-manager-bridge-source.service.in'):
         shutil.copy2(REPO / 'scripts/factory/systemd' / name, units / name)
 
 
@@ -168,8 +173,8 @@ def main():
         env['CODEX_BWRAP_SHA256'] = digest(base / 'codex-resources/bwrap')
         if env['CODEX_BWRAP_SHA256'] != base_manifest['bwrapEmbeddedSha256']:
             raise RuntimeError('Base bwrap digest mismatch')
-        if env['CODEX_BWRAP_SHA256'] != REQUIRED_BWRAP:
-            raise RuntimeError('STOP: Part R bwrap digest changed: ' + env['CODEX_BWRAP_SHA256'])
+        if env['CODEX_BWRAP_SHA256'] != required_bwrap():
+            raise RuntimeError('STOP: bwrap differs from the release source-build expectation: ' + env['CODEX_BWRAP_SHA256'])
         shutil.copytree(base, base_stage)
         (base_stage / 'MANIFEST.json').unlink(); (base_stage / 'SHA256SUMS').unlink()
     else:
@@ -183,8 +188,8 @@ def main():
         bwrap = work / 'bwrap'; shutil.copy2(native / 'bwrap', bwrap)
         run(['strip', '--strip-debug', '--strip-unneeded', bwrap])
         env['CODEX_BWRAP_SHA256'] = digest(bwrap)
-        if env['CODEX_BWRAP_SHA256'] != REQUIRED_BWRAP:
-            raise RuntimeError('STOP: Part R bwrap digest changed: ' + env['CODEX_BWRAP_SHA256'])
+        if env['CODEX_BWRAP_SHA256'] != required_bwrap():
+            raise RuntimeError('STOP: bwrap differs from the release source-build expectation: ' + env['CODEX_BWRAP_SHA256'])
         env.update(CODEX_FACTORY_REVISION=source, STABLE_GIT_COMMIT=source)
         metadata = json.loads(output(['cargo', 'metadata', '--locked', '--no-deps', '--format-version', '1'], cwd=REPO / 'codex-rs', env=env))
         owners = {t['name']: pkg['name'] for pkg in metadata['packages'] for t in pkg['targets'] if 'bin' in t['kind']}

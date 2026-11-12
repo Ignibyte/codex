@@ -1,0 +1,23 @@
+[Unit]
+Description=Forge-initiated fleet bridge source connection
+Requires=@PREFIX@.service
+After=@PREFIX@.service network-online.target
+
+[Service]
+Type=simple
+User=fleet-bridge
+Group=fleet-bridge
+SupplementaryGroups=fleet-bridge-clients
+UMask=0077
+ExecStart=@PACKAGE@/bin/codex-factory-bridge connect-source --state @STATE@/connector --config @CONFIG@/transport/source.json
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+KillMode=control-group
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=@STATE@
+
+[Install]
+WantedBy=multi-user.target

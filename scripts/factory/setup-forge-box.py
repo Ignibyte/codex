@@ -140,6 +140,9 @@ def mint(m, role):
 def initialize(a):
     cfg, state, run = map(absolute, (a.config_root, a.state_root, a.run_root))
     binary_dir = absolute(a.bin_dir)
+    if a.pilot:
+        require(all('pilot' in str(path) for path in (cfg,state,run,absolute(a.remote_config_root),
+                absolute(a.remote_state_root),absolute(a.remote_run_root))), 'pilot_named_roots_required')
     require(os.geteuid() != 0 and a.agent_uid not in (0, os.geteuid()), 'separate_uids_required')
     require(a.remote_agent_uid not in (0, a.remote_service_uid), 'separate_remote_uids_required')
     require(a.remote_service_uid == os.geteuid(), 'routes_require_matching_service_uid_on_both_hosts')
@@ -157,7 +160,7 @@ def initialize(a):
              remoteRunRoot=str(absolute(a.remote_run_root)), serviceUid=os.geteuid(),
              remoteServiceUid=a.remote_service_uid, agentUid=a.agent_uid, remoteAgentUid=a.remote_agent_uid,
              hub=hub, remoteHost=remote, transportKey=key, seats=seats, pending={}, project=PROJECT,
-             sshUser=a.ssh_user, serviceUser=a.service_user, remoteAdmitted=not a.defer_remote)
+             sshUser=a.ssh_user, serviceUser=a.service_user, remoteAdmitted=not a.defer_remote, pilot=a.pilot)
     for role in ROLES:
         remote_seat = role == 'pilot-seat'
         grant = dict(seat=seats[role], host=remote if remote_seat else hub,
@@ -605,7 +608,7 @@ def render_renewal(a):
     m = read(cfg / 'setup.json'); require(m['serviceUid'] == owner, 'render_service_uid')
     clients = cfg.stat().st_gid
     c = dict(schemaVersion=1, package=str(package), files={}, service=actor_ids(owner, clients),
-             runtimeRoot='/var/lib/fleet-manager-bridge-renew', hostTtl=86400, hostRenewBefore=43200,
+             runtimeRoot=str(absolute(a.runtime_root)) if a.runtime_root else '/var/lib/fleet-manager-bridge-renew', hostTtl=86400, hostRenewBefore=43200,
              seatTtl=3600, seatRenewBefore=1800, overlapSeconds=60,
              hosts=[dict(host=m['remoteHost'], keyId=m['transportKey'], bridgeUid=m['remoteServiceUid'])], seats=[])
     c['service'].update(state=str(Path(m['stateRoot']) / 'service'), pending=str(Path(m['stateRoot']) / 'pending'))
@@ -631,17 +634,191 @@ def render_renewal(a):
     for name in ('fleet-manager-bridge-renew.service', 'fleet-manager-bridge-renew.timer'):
         template = rooted(package / 'systemd' / (name + '.in')).read_text()
         template = template.replace('@PACKAGE@', str(package))
-        write(output / name, template, 0o644)
+        require(re.fullmatch('fleet-manager-bridge(?:-pilot)?',a.unit_prefix),'renewal_unit_prefix')
+        if name.endswith('.service'):
+            template=re.sub(r'^ReadWritePaths=.*$', 'ReadWritePaths='+m['stateRoot']+' '+c['runtimeRoot']+' '+str(cfg/'credentials'),template,flags=re.M)
+        template=template.replace('fleet-manager-bridge.service',a.unit_prefix+'.service').replace('Unit=fleet-manager-bridge-renew.service','Unit='+a.unit_prefix+'-renew.service')
+        template=template.replace('/etc/fleet-manager-bridge-renew.json','/etc/'+a.unit_prefix+'-renew.json')
+        write(output / name.replace('fleet-manager-bridge',a.unit_prefix), template, 0o644)
     publisher_policy = c['seats'][-1]['policy']
     write(output / 'pilot-publisher.json', publisher_policy, 0o644)
     if a.publisher_config:
         public = rooted(a.publisher_public_key).read_text().strip().split()
         require(len(public) >= 2 and public[0] == 'ssh-ed25519' and re.fullmatch('[A-Za-z0-9+/=]+', public[1]),
                 'publisher_ed25519_public_key_required')
-        command = f'/usr/bin/python3 -I {package}/setup-forge-box.py publish-credential --policy-file /etc/fleet-manager-bridge-publisher.json'
+        command = f'/usr/bin/python3 -I {package}/setup-forge-box.py publish-credential --policy-file /etc/{a.unit_prefix}-publisher.json'
         write(output / 'publisher-authorized-keys.fragment', 'restrict,command="' + command + '" ' +
               public[0] + ' ' + public[1] + ' fleet-credential-publisher\n', 0o644)
     return dict(rendered=True, allowlist=str(output / 'allowlist.json'), units=2, servicesStarted=0)
+
+def public_ed25519(value):
+    parts=value.strip().split()
+    require(len(parts)>=2 and parts[0]=='ssh-ed25519' and re.fullmatch('[A-Za-z0-9+/=]+',parts[1]),'ed25519_public_key_required')
+    return ' '.join(parts[:2])
+
+
+def source_keygen(a):
+    cfg=absolute(a.config_root); m=load_setup(cfg)
+    require(m.get('pilot') is True,'pilot_setup_required')
+    key=cfg/'transport/forge-ed25519'
+    require(not key.exists() and not Path(str(key)+'.pub').exists(),'transport_key_exists')
+    result=subprocess.run(['/usr/bin/ssh-keygen','-q','-t','ed25519','-N','','-C','fleet-forge-source','-f',str(key)],capture_output=True)
+    require(result.returncode==0,'transport_keygen_failed')
+    key.chmod(0o600); Path(str(key)+'.pub').chmod(0o600)
+    return dict(keyCreated=True,publicKeyFile=str(key)+'.pub',servicesStarted=0)
+
+
+def configure_transport(a):
+    require(os.geteuid()==0,'configure_transport_requires_root')
+    package=rooted(Path(__file__).resolve().parent,directory_only=True)
+    cfg=absolute(a.config_root); owner=cfg.stat().st_uid
+    m=read(cfg/'setup.json')
+    require(owner==m['serviceUid'] and owner!=0 and m.get('pilot') is True,'pilot_setup_required')
+    require(m['serviceUid']==m['remoteServiceUid'] and m['serviceUser']=='fleet-bridge','transport_service_identity')
+    for field in ('stateRoot','configRoot','runRoot','remoteStateRoot','remoteConfigRoot','remoteRunRoot'):
+        require('pilot' in str(absolute(m[field])),'pilot_named_roots_required')
+    require(Path(m['runRoot']).is_relative_to(m['stateRoot'])
+            and Path(m['remoteRunRoot']).is_relative_to(m['remoteStateRoot']),'pilot_run_within_state_required')
+    require(all(isinstance(m[field],int) and 0<m[field]<2**32-1 and m[field]!=owner
+                for field in ('agentUid','remoteAgentUid')),'transport_endpoint_identity')
+    request=read(rooted(a.input,private=True))
+    require(request['forgeAddress']=='10.200.68.55' and request.get('port',22)==22,'transport_route_fixed')
+    address=str(ipaddress.ip_address(request['sourceAddress']))
+    require(ipaddress.ip_address(address).is_private and address!='10.200.68.55','transport_private_source_required')
+    public=public_ed25519(request['clientPublicKey']); hostkey=public_ed25519(request['sourceHostKey'])
+    actor=actor_ids(owner,cfg.stat().st_gid)
+    identity=cfg/'transport/forge-ed25519'
+    info=identity.lstat()
+    require(stat.S_ISREG(info.st_mode) and info.st_uid==owner and stat.S_IMODE(info.st_mode)==0o600,'transport_key_permissions')
+    actual=actor_run(actor,['/usr/bin/ssh-keygen','-y','-f',identity]).decode()
+    require(public_ed25519(actual)==public,'transport_public_key_mismatch')
+    snapshot=json.loads(actor_run(actor,[package/'bin/codex-factory-bridge','inspect','--state',Path(m['stateRoot'])/'service']))
+    require(snapshot['host']==m['hub'],'transport_hub_identity')
+    for role in ROLES:
+        b=read(cfg/(role+'.binding.json'))
+        require(b['grant']['seat']==m['seats'][role] and b['serviceUid']==owner,'transport_binding_identity')
+        existing=next((x for x in snapshot['seats'] if x['seat']==m['seats'][role]),None)
+        if existing:require(existing['grant']==b['grant'] and not existing['revoked'],'transport_enrolled_grant_conflict')
+    if request.get('renewalConfig'):
+        # An existing R generation is inspected by its own pinned helper. It is
+        # never edited or executed as a broker during transport staging.
+        old=read(rooted(request['renewalConfig'],private=True))
+        old_package=rooted(old['package'],directory_only=True)
+        old_helper=rooted(old_package/'setup-forge-box.py')
+        with old_helper.open('rb') as stream:
+            require(hashlib.file_digest(stream,'sha256').hexdigest()==old['files']['setup-forge-box.py'],'transport_renewal_code_changed')
+        code='import runpy,sys;runpy.run_path(sys.argv[1])["validate_allowlist"](sys.argv[2])'
+        verified=subprocess.run(['/usr/bin/python3','-I','-c',code,str(old_helper),str(request['renewalConfig'])],capture_output=True,timeout=20)
+        require(verified.returncode==0,'transport_renewal_config_invalid')
+        require(old['service']['uid']==owner and old['service']['state']==str(Path(m['stateRoot'])/'service')
+                and old['hosts']==[dict(host=m['remoteHost'],keyId=m['transportKey'],bridgeUid=owner)],'transport_renewal_identity_conflict')
+        require({x['role'] for x in old['seats']}==set(ROLES),'transport_renewal_seat_conflict')
+        for seat in old['seats']:
+            require(seat['policy']==read(cfg/(seat['role']+'.binding.json')),'transport_renewal_binding_conflict')
+    output=absolute(a.output); output.mkdir(mode=0o700); rooted(output,directory_only=True)
+    generation=str(uuid.uuid4()); prefix='fleet-manager-bridge-pilot'
+    entry_path='/etc/ssh/fleet-bridge-pilot-entry.json'; launch_config='/etc/ssh/fleet-bridge-pilot-launch.json'
+    login='/etc/ssh/fleet-bridge-pilot-login'; launcher='/etc/ssh/fleet-bridge-pilot-launcher'
+    entry=dict(generation=generation,sourceHost=m['remoteHost'],transportKey=m['transportKey'],hub=m['hub'],
+               serviceUid=owner,allowedAgentUids=[m['remoteAgentUid']],state=str(Path(m['remoteStateRoot'])/'source'),
+               socket=str(Path(m['remoteRunRoot'])/'remote.sock'))
+    write(output/'entry.json',entry,0o644)
+    wrapper=lambda function: '#!/usr/bin/python3 -I\nimport runpy\nrunpy.run_path('+repr(str(package/'fleet-bridge-ssh-entry.py'))+')["'+function+'"]('+repr(launch_config)+')\n'
+    write(output/'fleet-bridge-pilot-login',wrapper('dispatch'),0o755)
+    write(output/'fleet-bridge-pilot-launcher',wrapper('launch'),0o755)
+    file_digest=lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    launch=dict(generation=generation,sourceHost=m['remoteHost'],transportKey=m['transportKey'],hub=m['hub'],
+         serviceUid=owner,forgeAddress='10.200.68.55',package=str(package),login=login,launcher=launcher,entryConfig=entry_path,
+         files={str(package/'bin/codex-factory-bridge'):file_digest(rooted(package/'bin/codex-factory-bridge')),
+                str(package/'fleet-bridge-ssh-entry.py'):file_digest(rooted(package/'fleet-bridge-ssh-entry.py')),
+                login:file_digest(output/'fleet-bridge-pilot-login'),launcher:file_digest(output/'fleet-bridge-pilot-launcher'),
+                entry_path:file_digest(output/'entry.json')})
+    write(output/'launch.json',launch,0o644)
+    write(output/'fleet-bridge-pilot.keys','restrict,from="10.200.68.55",command="'+launcher+'" '+public+' fleet-forge-source\n',0o644)
+    match='\n'.join(['Match User fleet-bridge','    AuthorizedKeysFile /etc/ssh/fleet-bridge-pilot.keys',
+         '    AuthorizedKeysCommand none','    PubkeyAcceptedAlgorithms ssh-ed25519','    PubkeyAuthentication yes',
+         '    AuthenticationMethods publickey','    PasswordAuthentication no','    KbdInteractiveAuthentication no',
+         '    PermitTTY no','    AllowTcpForwarding no','    X11Forwarding no','    AllowAgentForwarding no',
+         '    PermitTunnel no','    DisableForwarding yes','    PermitUserRC no',''])
+    write(output/'fleet-bridge-pilot-match.conf',match,0o644)
+    source=dict(generation=generation,sourceAddress='10.200.68.55',serviceState=str(Path(m['stateRoot'])/'service'),
+         transport=dict(sourceHost=m['remoteHost'],transportKey=m['transportKey'],hub=m['hub'],address=address,port=22,
+             user='fleet-bridge',identityFile=str(identity),knownHosts=str(cfg/'transport/source_known_hosts'),
+             allowedAgentUids=[m['remoteAgentUid']]))
+    write(output/'source.json',source)
+    write(output/'source_known_hosts','factory-source-'+m['remoteHost']+' '+hostkey+'\n')
+    template=rooted(package/'systemd/fleet-manager-bridge-source.service.in').read_text()
+    for token,value in dict(PACKAGE=str(package),PREFIX=prefix,STATE=m['stateRoot'],CONFIG=str(cfg)).items():template=template.replace('@'+token+'@',value)
+    write(output/(prefix+'-source.service'),template,0o644)
+    hub='''[Unit]
+Description=Throwaway pilot fleet bridge hub
+After=network.target
+[Service]
+Type=simple
+User=fleet-bridge
+Group=fleet-bridge
+SupplementaryGroups=fleet-bridge-clients
+UMask=0077
+ExecStart=PACKAGE/bin/codex-factory-bridge serve --state STATE/service --socket RUN/bridge.sock
+Restart=no
+KillMode=control-group
+TimeoutStopSec=10
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=STATE
+[Install]
+WantedBy=multi-user.target
+'''.replace('PACKAGE',str(package)).replace('STATE',m['stateRoot']).replace('RUN',m['runRoot'])
+    write(output/(prefix+'.service'),hub,0o644)
+    updated=dict(m,binDir=str(package/'bin'),transportGeneration=generation,transportDirection='forge-initiated')
+    write(output/'setup.json',updated,0o640)
+    files={p.name:dict(sha256=file_digest(p),mode=oct(stat.S_IMODE(p.stat().st_mode))) for p in output.iterdir() if p.is_file()}
+    manifest=dict(schema=1,pilot=True,generation=generation,package=str(package),stateRoot=m['stateRoot'],configRoot=str(cfg),
+            remoteStateRoot=m['remoteStateRoot'],remoteConfigRoot=m['remoteConfigRoot'],sourceHost=m['remoteHost'],hub=m['hub'],files=files)
+    write(output/'generation.json',manifest,0o644)
+    return dict(staged=True,pilot=True,generation=generation,output=str(output),servicesStarted=0)
+
+
+def transport_probe_command(c, mode):
+    t=c['transport']
+    return ['/usr/bin/ssh','-F','/dev/null',('-tt' if mode=='pty' else '-T'),
+        '-oBatchMode=yes','-oIdentitiesOnly=yes','-oIdentityAgent=none','-oPreferredAuthentications=publickey',
+        '-oPasswordAuthentication=no','-oKbdInteractiveAuthentication=no','-oStrictHostKeyChecking=yes',
+        '-oGlobalKnownHostsFile=/dev/null','-oCheckHostIP=no','-oUpdateHostKeys=no','-oControlMaster=no','-oControlPath=none',
+        '-oForwardAgent=no','-oForwardX11=no','-oProxyCommand=none','-oProxyJump=none','-oPermitLocalCommand=no',
+        '-oConnectTimeout=3','-oConnectionAttempts=1','-oLogLevel=ERROR','-oEscapeChar=none',
+        '-oUserKnownHostsFile='+t['knownHosts'],'-oHostKeyAlias=factory-source-'+t['sourceHost'],
+        '-oBindAddress='+c['sourceAddress'],'-i',t['identityFile'],'-l',t['user'],'-p',str(t['port'])]
+
+
+def verify_launcher(a):
+    path=absolute(a.config); c=read(path); t=c['transport']
+    require(c['sourceAddress']=='10.200.68.55' and t['port']==22 and t['user']=='fleet-bridge','transport_route_fixed')
+    uid=path.stat().st_uid; require(uid!=0 and stat.S_IMODE(path.stat().st_mode)==0o600,'transport_config_permissions')
+    actor=actor_ids(uid,path.stat().st_gid)
+    env={'PATH':'/usr/bin:/bin','LC_ALL':'C','HOME':'/'}
+    kwargs=dict(user=actor['uid'],group=actor['gid'],extra_groups=actor['groups']) if os.geteuid()==0 else {}
+    require(os.geteuid() in (0,uid),'transport_verifier_uid')
+    def probe(mode,tail):
+        command=transport_probe_command(c,mode)+tail+['--',t['address']]
+        if mode!='forward':command += ['/bin/sh' if mode=='shell' else 'codex-factory-v1']
+        return subprocess.run(command,input=b'',capture_output=True,timeout=10,env=env,**kwargs)
+    positive=probe('protocol',[])
+    lines=positive.stdout.splitlines(); require(positive.returncode==0 and len(lines)==1,'launcher_protocol_not_authenticated')
+    hello=json.loads(lines[0])
+    require(set(hello)=={'protocol','generation','sourceHost','keyId','hub','serviceUid','bootId','available'}
+            and hello['protocol']==2 and hello['generation']==c['generation'] and hello['sourceHost']==t['sourceHost']
+            and hello['keyId']==t['transportKey'] and hello['hub']==t['hub'] and hello['serviceUid']==uid
+            and uuid.UUID(hello['bootId']).int and isinstance(hello['available'],bool),
+            'launcher_protocol_identity_denied')
+    shell=probe('shell',[]); require(shell.returncode==1 and not shell.stdout,'launcher_shell_not_refused')
+    # OpenSSH exits 255 when -tt requires a PTY that the authenticated server
+    # explicitly refuses; some versions continue the non-PTY command instead.
+    pty=probe('pty',[]); require(pty.returncode in (0,255) and b'PTY allocation request failed' in pty.stderr,'launcher_pty_not_refused')
+    forwarding=probe('forward',['-N','-oExitOnForwardFailure=yes','-R','127.0.0.1:0:127.0.0.1:1'])
+    require(forwarding.returncode!=0 and b'remote port forwarding failed' in forwarding.stderr,'launcher_forward_not_refused')
+    return ['AUTHENTICATED_PROTOCOL PASS','SHELL REFUSED','PTY REFUSED','FORWARD REFUSED']
 
 def main():
     os.umask(0o077)
@@ -653,6 +830,7 @@ def main():
     for name in ('agent-uid', 'remote-agent-uid', 'remote-service-uid'):
         init.add_argument('--' + name, required=True, type=int)
     init.add_argument('--defer-remote', action='store_true')
+    init.add_argument('--pilot', action='store_true', help='Mark explicitly throwaway pilot roots; never reuse for final setup')
     init.add_argument('--ssh-address', default='10.200.68.55')
     init.add_argument('--ssh-port', type=int, default=22)
     init.add_argument('--ssh-user', default='ai')
@@ -677,11 +855,22 @@ def main():
         elif cmd == 'render-renewal':
             q.add_argument('--config-root', required=True); q.add_argument('--output', required=True)
             q.add_argument('--publisher-config'); q.add_argument('--publisher-public-key')
+            q.add_argument('--runtime-root'); q.add_argument('--unit-prefix',default='fleet-manager-bridge')
         elif cmd == 'credential-bytes': q.add_argument('--file', required=True)
         else:
             group = q.add_mutually_exclusive_group(required=True)
             group.add_argument('--policy-json'); group.add_argument('--policy-file')
+    key=sub.add_parser('source-keygen'); key.add_argument('--config-root',required=True)
+    transport=sub.add_parser('configure-transport')
+    transport.add_argument('--config-root',required=True); transport.add_argument('--input',required=True)
+    transport.add_argument('--output',required=True); transport.add_argument('--direction',choices=['forge-initiated'],required=True)
+    verify=sub.add_parser('verify-launcher'); verify.add_argument('--config',required=True)
     a = p.parse_args()
+    if a.command=='source-keygen': print(json.dumps(source_keygen(a))); return
+    if a.command=='configure-transport': print(json.dumps(configure_transport(a))); return
+    if a.command=='verify-launcher':
+        for line in verify_launcher(a): print(line)
+        return
     if a.command == 'credential-bytes':
         require(not sys.stdout.isatty(), 'credential_pipe_required')
         sys.stdout.buffer.write(credential_bytes(Path(a.file))); return

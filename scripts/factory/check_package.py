@@ -89,6 +89,7 @@ def upstream_contract(target='x86_64-unknown-linux-gnu', repo=REPO):
 
 
 FORK_FILES = ['bin/codex-factory-bridge', 'setup-forge-box.py', 'SETUP.md',
+              'fleet-bridge-ssh-entry.py', 'systemd/fleet-manager-bridge-source.service.in',
               'systemd/fleet-manager-bridge-renew.service.in',
               'systemd/fleet-manager-bridge-renew.timer.in']
 
