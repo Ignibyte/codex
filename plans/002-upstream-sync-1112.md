@@ -506,3 +506,75 @@ Final scope is exactly the eight named follow-up files. Removed only `/srv/stack
 **Authorized scope / files:** Branch `plan/002-shipped-package` from the unmerged package/precondition work. Update `scripts/factory/{package.py,check_package.py,test_check_package.py}`, add `scripts/factory/build_voice.py` and recorded upstream shipped-path list/provenance files beside it, update `third_party/voice/assemble_package.py` and its tests only if needed to accept the fork's valid build-metadata version without changing CLI bytes, and update `docs/{factory-setup.md,fork-mailbox.md}`, WORKFLOW.md, CHANGELOG-FORK.md and this plan. Do not edit 1112c. Only package.py creates fresh dist/1112d. Retain the AppArmor preflight and full bwrap digest in READY output. No main merge, live-host action, system package/policy change or plan-003 code.
 
 **Smallest version / proof:** Preserve 1112c's validated full base binaries, especially CLI `87b000eb4f2b…` and bwrap `bd2ed101e191…`, after verifying source/target/manifest hashes. Build the missing same-source voice helper and the pinned native closure via upstream's native recipe/release stage+seal+assemble flow; use eight jobs and local isolated NVMe paths. Never relabel a mismatched upstream runtime receipt. A minimal packaging-version extension may accept the existing fork SemVer build metadata while retaining all runtime source/hash/target checks. Add the relative top-level codex symlink after upstream voice assembly. The gate must union the upstream-derived layout with a recorded matching stock release's shipped paths (including licenses/notices/runtime receipts), rejecting every omission. Show 1112c red and 1112d green, cover omission/link regressions and upstream voice assembly tests, validate/load the relocated native voice closure without capturing audio, then rerun packaged shell/write/MCP turns and all seven mailbox lanes. Record the complete inventory, source/provenance, constraints and proof in manifest/plan. If the native runtime cannot be built or fetched on z690, STOP and name the exact missing prerequisite and upstream release recipe; do not publish/claim ready or skip files. Report immediately if preserving CLI/bwrap bytes proves impossible. Finish with FORK PACKAGE READY, then request owner review before merge.
+
+### Proof result — complete shipped package 1112d
+
+Implementation/proof source: `4e4385fd3c`; runtime Rust tree remains `6186ca2947a18832c68ffe3b50a53149744bf4ce` from `6cb7fd718329da87bfd1dcf4c10536cf82b1c367`. Main remains `413612082ee930c005ca805452d52c202f5debbb`. This owner correction authorizes the implementation, **not a main merge**. Plan 003 is unchanged and awaits review after this merge.
+
+The official `rust-v0.167.2/codex-package-x86_64-unknown-linux-musl.tar.gz` was fetched from openai/codex and SHA-256 verified against the release asset digest `3d77be1748d35a4bb0e7f8752cde3b11890c63338e8c599f01eafa4a59e17b3d`. Its 44 regular-file paths, plus the upstream installer's `codex -> bin/codex` link, exactly equal the owner's 45-path installed list. `scripts/factory/upstream-shipped-linux.json` records this provenance, installer source hash and full inventory. The gate unions those paths with the current derived GNU layout; it requires 47 paths including app-server and the fork bridge. Metadata, licenses and notices must exist but need not be executable. The launcher must be that exact relative link. Release-version/installer drift requires another inventory review.
+
+Upstream's standalone pinned-source recipe built the native runtime successfully. An initial Cargo helper attempt failed because its restricted pkg-config view excluded ALSA; it was not published. Used the **actual upstream Linux release job** instead: verified official Bazel 9.2.0 (`7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694`), `run_bazel_with_buildbuddy.py build --config=release --jobs=8 //codex-rs/voice-host:codex-voice-host //third_party/voice:native_runtime`, local execution, pinned upstream toolchains/static ALSA, then `release_runtime.py` stage/seal. All caches, sandbox, JVM temp and output roots were inside `/srv/stacks/codex-voice-tmp-1112d`. Bazel: **PASS, 135.416s, 6,336 actions**. Native/helper build inputs match the declared runtime source; receipts were not relabeled. The helper reports that full source commit. No system tool install or policy change occurred.
+
+Created only fresh `dist/1112d`, through:
+
+```text
+TMPDIR=/srv/stacks/codex-voice-tmp-1112d/tmp python3 scripts/factory/package.py \
+  --output dist/1112d --work-dir /srv/stacks/codex-voice-tmp-1112d/package-work \
+  --base-package dist/1112c --voice-inputs /srv/stacks/codex-voice-tmp-1112d/voice-release \
+  --source-commit 6cb7fd718329da87bfd1dcf4c10536cf82b1c367
+Complete package created: /srv/stacks/codex/dist/1112d
+```
+
+The entry point verifies/copies the **whole** prior package, checks its source/target/tree and every manifest/hash, runs upstream `assemble_package.py` with the matching public runtime, then adds the installer link. The only upstream Python change accepts the fork's SemVer build metadata (`0.167.2+ignibyte.1112b`); version equality, runtime commit, target, pinned source and all hash checks remain enforced. The upstream shell archive wrapper excludes GNU app targets, so the fork calls its same assembly implementation directly for the native GNU package. No Rust code or version changed.
+
+1112d contains **all 38 voice files**: one helper, 26 native libraries/plugins (all seven plugins), runtime/voice manifests, sources, NOTICE and seven licenses. The helper SHA-256 is `3b47d23090f210da4c145cd92151d5d3819b18ae94a402341ec1b471fe783ef3`; helper and native libraries require at most GLIBC_2.28. The unchanged CLI still sets the whole package's GLIBC_2.39/OpenSSL 3.0 requirements. Every one of 1112c's seven runtime files is byte-identical in 1112d. In particular:
+
+```text
+bin/codex  87b000eb4f2b2e3be3944cbced938b3d6ad5b1fe9945946e26e6ec041ca36458
+bwrap      bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023
+codex-cli 0.167.2+ignibyte.1112b
+codex -> bin/codex
+```
+
+Focused proof (same implementation head):
+
+```text
+python3 -m unittest discover -s scripts/factory -p test_check_package.py
+Ran 9 tests ... OK
+python3 -m unittest discover -s third_party/voice -p test_assemble_package.py
+Ran 17 tests ... OK
+CODEX_REPO_ROOT=/srv/stacks/codex PYTHONPATH=scripts python3 -m unittest discover -s scripts/codex_package -p 'test_*.py'
+Ran 27 tests ... OK
+check_package.py dist/1112c: passed=false, missing=39 (38 voice + codex link)
+check_package.py dist/1112d: passed=true, missing=[], notExecutable=[], errors=[]
+```
+
+The broader upstream voice Python suite ran 94 tests: 72 passed, 19 platform/toolchain skips, three harness errors because patchelf was missing. Fetched/checksummed official patchelf 0.19.3 only into the isolated directory and reran **only those three**: all pass (75 passed in total, 19 skips). The initial package-suite invocation lacked CODEX_REPO_ROOT and did not load its tests; the corrected exact command above passes all 27. No Rust crate was touched and no workspace suite rerun is claimed. The original 14 upstream-owned workspace failures remain **failures, not waived**.
+
+Actual packaged voice protocol proof at both the published path and a reflink copy of the whole folder at another prefix: Hello→Ready, InitializeRuntime→RuntimeReady, Close→Closed, helper exit 0. Verified all **26** receipt-listed private libraries, including all seven plugins, in the helper's mapped libraries at the respective package prefix; no host GStreamer fallback. Process hardening correctly denied an ordinary /proc/maps read; the fixture used sudo to inspect its own helper without changing hardening. No audio devices, recording, real voice conversation or model session were started by this check.
+
+Packaged tool proof used the unchanged exact owner flags, separate private ChatGPT home/login, GPT-6.1 Terra high, and actual event/effect assertions:
+
+| Tool turn | Result |
+| --- | --- |
+| read-only shell, nonce + hostname | PASS; one successful command; 6.53s |
+| workspace-write, actual nonce file bytes | PASS; one successful command; 6.63s |
+| local read-only MCP, independent server-call nonce | PASS; one MCP call; 7.28s |
+
+All turns exit 0 and complete, with no missing-host diagnostic. Owner auth/config/model-cache fingerprints remain unchanged. All five existing packaged helper/resource launch checks pass. No no-tool turn is counted as tool qualification.
+
+All seven existing mailbox qualifiers reran with production inputs from `dist/1112d/bin`; durability/reconciliation use the same-source separate dev-small fault pair. Its factory revision and embedded bwrap digest were checked; it was reused, not rebuilt. The first fixture wrapper stopped before any mailbox lane because Python mmap containment was used incorrectly; corrected the fixture to substring `.find()` and then ran every lane. Production/fault runtime code was unchanged.
+
+| Mailbox lane | Result / elapsed |
+| --- | --- |
+| contract | PASS; 64 checks; 0.20s |
+| credentials | PASS; 7 checks; 5.49s |
+| recovery | PASS; 9 checks; 18.28s |
+| native | PASS; 5 checks; 2.18s |
+| lifecycle | PASS; 4 checks; 2.30s |
+| durability | PASS; 7 checks; 1.76s |
+| reconciliation | PASS; all five native crash lanes; 10.75s |
+
+96 counted checks and five crash lanes pass. Fixture `/tmp` was a private mount of the task's NVMe directory; the host /tmp stayed its original tmpfs. The updated packaged setup helper/test also reran in a private /tmp and /run namespace: **PASS all nine checks**, three separate-UID enrollments, all four permitted edges, both denied edges, restart/replay with four unique messages and two receipts each, no models. Endpoint UID 65532 preflight passes, including relocation and simulated denial before enrollment. Whole-folder relocated preflight also passes as UID 1000. z690's AppArmor restriction sysctl remains absent; no real Forge/dev-3 or restricted Ubuntu policy qualification is claimed. Ops still must permit the **new installed 1112d path**, despite its unchanged bwrap digest.
+
+The runbook/interface now target the whole 1112d folder and keep the previous 1112c setup proof explicitly historical. Source review, package manifest, runtime/voice manifests and complete checksums are the review record; no evidence folder, live deployment, new subsystem, main merge or plan-003 implementation was created.

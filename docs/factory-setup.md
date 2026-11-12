@@ -556,3 +556,9 @@ Actual stdout:
 }
 ```
 
+The same packaged nine-check fixture was rerun against **dist/1112d** after voice
+assembly and passed with the same UIDs, four durable messages, two receipts per
+message, and zero models. The proof above was first recorded for 1112c; plan 002
+and 1112d/MANIFEST.json record the subsequent 1112d results. Its packaged bwrap
+and all other pre-existing runtime bytes are unchanged. No real-host policy or
+installation is qualified by this local fixture.
