@@ -1,5 +1,7 @@
 # Fork changelog
 
+- 2026-11-12: Plan 004 records conditional S approval, per-endpoint account/enrollment constraints and notices-only use before S; received 1112e remains unchanged.
+
 - 2026-11-12: Plan 004 R adds deferred remote admission, same-key host renewals and crash-resumable seat credential publication through a root-owned allowlist/timer in complete package 1112e.
 
 - 2026-11-12: Plan 002 corrects the shipped-package gate and adds the upstream voice bundle and root launcher in 1112d, preserving the 1112c CLI/bwrap bytes and sandbox precondition.

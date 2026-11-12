@@ -1,5 +1,7 @@
 # Fork mailbox and the 2026-11-12 upstream sync
 
+Until S is live the mailbox carries notices only, never a secret.
+
 Plan 002 imports upstream `c0cc9fc820f62e4dbdde68214dd6d792d6c8a7ee` while retaining the factory mailbox, app-server integration, CLI additions, and agent roles.
 
 The complete release is prepared under `dist/1112e/`. Install the **whole folder**: `codex-package.json`, `bin/`, `codex-resources/`, `codex-path/`, manifest, checksums, interface, top-level `codex -> bin/codex` link, and the entire `codex-resources/voice/` bundle (helper, native libraries/plugins, manifests and licenses). The target is `x86_64-unknown-linux-gnu` (glibc), requiring glibc 2.39 or newer and the OpenSSL 3.0 symbol ABI. The CLI also needs `libbz2.so.1.0`. Check the manifest's complete library/version requirements against the destination host before installation. This work does not install or restart anything. Frozen 1112/1112b lack tool hosts, and 1112c lacks the shipped voice bundle/root launcher. They are incomplete packages: their successful no-tool turns did not qualify shell execution.

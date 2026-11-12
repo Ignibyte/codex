@@ -1,9 +1,13 @@
 # Forge bridge setup — Part R, complete package 1112e
 
+Until S is live the mailbox carries notices only, never a secret.
+
 Owner installation review only. This seat does not contact, deploy to or restart a fleet host.
 Install the whole dist/1112e folder: root codex -> bin/codex launcher, bin/, codex-path/, codex-resources/voice/, metadata, checksums, setup helper and systemd/ templates. The package's MANIFEST.json records every hash, source revision and ABI requirement. Version remains 0.167.2+ignibyte.1112b; the source revision distinguishes R. Frozen 1112d remains the owner's installed version until an approved cutover.
 
-Part R runs the Forge hub and its two local seats with unattended renewals before dev-3 is admitted. Use init --defer-remote below. Do not install the old dev-3 outbound proxy, old Forge SSH forced entry or its sudo rule: dev-3 to Forge port 22 remains closed. Part T supplies the owner-selected Forge-initiated transport only after R is installed and proven. Its seven launcher conditions are a separate gate; R implements none of that launcher. Part S and plan 003 remain held.
+Part R runs the Forge hub and its two local seats with unattended renewals before dev-3 is admitted. Use init --defer-remote below. Do not install the old dev-3 outbound proxy, old Forge SSH forced entry or its sudo rule: dev-3 to Forge port 22 remains closed. Part T supplies the owner-selected Forge-initiated transport only after R is installed and proven. Its seven launcher conditions are a separate gate; R implements none of that launcher. Part S is approved only after the pilot works; S code has not started and plan 003 remains held.
+
+Owner account decision (3f56caab): provision one endpoint account per role before the first durable init/bootstrap/enrollment. The 1112e helper still has one local --agent-uid and one shared credential-directory default: its ai-based examples below are for compatibility/throwaway proof until the per-role UID/path generation is supplied. An allowlist edit cannot rebind an enrolled seat UID. See the account table and migration constraint in plan 004 Part S. The received/verified dist/1112e stays unchanged; these source-document updates enter the next package. From 1112f onward the displayed version must name the release, for example 0.167.2+ignibyte.1112f.
 
 ## 1. Ops provisions identities and directories through ucs-ops
 

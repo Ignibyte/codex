@@ -1,6 +1,6 @@
 # Plan 004 — Part R: renewals (APPROVED TO BUILD, 14:31 CST)
 
-**Goal:** Run hub/local seats unattended before dev-3 admission. Owner `1fcc1441` selects T subject to its gate. R build approved by /tmp/fork-brief-004-review.txt; T waits for R installed/proven and its launcher gate; S/003 stay held. UID 983/client GID 982/preflight are owner-reported; init/keygen/ssh-config/units stay held. Commands are proposed.
+**Goal:** Run hub/local seats unattended before dev-3 admission. Owner `1fcc1441` selects T subject to its gate. R build approved by /tmp/fork-brief-004-review.txt; T waits for R installed/proven and its launcher gate; S is approved after the pilot works (owner 3f56caab); S code and 003 stay held. UID 983/client GID 982/preflight are owner-reported; init/keygen/ssh-config/units stay held. Commands are proposed.
 
 **Smallest version:** Keep connect-host/remote-entry for offline compatibility only; dev-3→Forge port 22 stays CLOSED. No outbound dev-3 leg/Forge forced entry. Keep credential format. Fleet-bridge `init --defer-remote` saves seat/host/key UUIDs, omits admission/pilot bootstrap; locals work independently. Fleet-bridge `admit-remote --config-root <cfg>` later uses saved UUIDs, verifies existing admissions; no re-init/deletion. Default init stays compatible; partial init stops.
 
@@ -98,9 +98,25 @@ Whole root-owned `/opt/fleet-codex/<40-hex-commit>-1112f`, release AppArmor prof
 
 ---
 
-# Plan 004 — Part S: private content and arrival signal (proposal; separate review)
+# Plan 004 — Part S: private content and arrival signal (APPROVED AFTER PILOT; no S code now)
 
-**Decision/package:** I recommend S after R/T in a separate whole `dist/1112g`, not silently added to 1112f. Both features can share g, but change endpoint identities, payload/wait framing and clients. R/T remain useful independently; neither claims endpoint-only secrecy or automatic inbox delivery. S needs owner agreement on OS-user isolation and client integration before implementation. No live-host inspection occurred.
+**Decision/package:** I recommend S after R/T in a separate whole `dist/1112g`, not silently added to 1112f. Both features can share g, but change endpoint identities, payload/wait framing and clients. R/T remain useful independently; neither claims endpoint-only secrecy or automatic inbox delivery. Owner 3f56caab approves S only after the pilot works. Provision endpoint accounts before enrollment; the account map and exact client/file inputs must be settled before implementation. No S code or live-host inspection occurred.
+
+**Ops account decision — owner 3f56caab, text only:** Until S is live the mailbox carries notices only, never a secret. Account names below are proposed; Ops assigns free, stable numeric UIDs/GIDs through ucs-ops before any durable enrollment. Private bases have root-owned, non-endpoint-writable parents; each endpoint owns its base/subdirectories 0700 and secret files 0600.
+
+| Endpoint / host | Account | Private base B / owned assets | Socket group | R allowlist |
+| --- | --- | --- | --- | --- |
+| spec-manager / Forge | fleet-spec-manager | /var/lib/fleet-seats/spec-manager; B/codex, B/credentials/mailbox.json, B/keys/mailbox.key (S), B/native, private controller socket/processes | fleet-bridge-clients | role=spec-manager; actor.uid/gid/groups for this account; matching policy.grant.agentUid; per-role credential/state paths; local publication |
+| foreman-bot / Forge | fleet-foreman-bot | /var/lib/fleet-seats/foreman-bot; same owned asset layout | fleet-bridge-clients | role=foreman-bot; this account's actor/grant UID and private paths; local publication |
+| pilot-seat / dev-3 | fleet-pilot-seat | /var/lib/fleet-seats/pilot-seat; same owned asset layout | fleet-bridge-clients on dev-3 | role=pilot-seat; this account's actor/grant UID and private paths; SSH publisher user=fleet-pilot-seat; matching root-owned receiver policy |
+
+The common fleet-bridge service UID, registry/MAC key and T transport key remain separate. Root retains R's allowlist/package pins and publisher SSH private key; endpoint S encryption keys are different and do not exist in R. Each account needs its own rendered Codex/MCP/hook identity and private control socket. Shared ai must not retain read/control/run-as access to endpoints; unrestricted root/sudo would defeat this boundary. Root/Ops and chosen model providers remain trusted readers.
+
+**Parameterisation required before durable enrollment:** R's bridge/authentication/renewal engine already supports per-seat UIDs and render-renewal reads each binding's agentUid. However, shipped 1112e init accepts one --agent-uid for both local seats and gives them one shared credential parent. Extend the setup inputs to per-role UIDs, credential/native paths and publisher login, and have Ops set each CODEX_HOME/workspace/environment; render all grants/bindings/bootstrap deliveries/routes/allowlist from one role map. The renewal template must generate ReadWritePaths for the local per-role credential directories; its shipped shared-directory exception does not cover /var/lib/fleet-seats. Keep ProtectSystem/ProtectHome and peer/file checks, rather than widening access to all homes. The restricted pilot publisher SSH login also needs an Ops-approved executable forced-command route, not bare nologin. Amend/review T's scope for the renewal template before code and prove the separate UIDs. T's planned service transport can keep the same service UIDs/checks; its permitted endpoint UID list must use the pilot account. This is setup work before enrollment, not early S encryption/wait implementation.
+
+**Direct install answer:** With the shipped 1112e setup helper, converting already-enrolled ai seats to new UIDs requires a fresh initialized setup/state root for the supported helper workflow; editing the allowlist and re-enrolling the same UUID is unsupported. Bootstrap/enroll refuse any existing UUID even after revoke, and rotation preserves its grant. Therefore use only a separate throwaway R proof under ai, or wait for final account parameters before durable init/enrollment. Never delete a durable root. At the low-level protocol an existing registry can accept entirely new seat UUIDs, but replacing the recipient graph (potentially the pilot too), bindings, ledgers and pending work needs a reviewed migration that 1112e does not provide. A fresh root is not inherent to T transport or S cryptography; no simple same-seat UID migration is claimed available now.
+
+**Version / release:** Owner's latest instruction starts release-labelled versions at 1112f: 0.167.2+ignibyte.1112f, keeping model-catalog numeric version 0.167.2. Received 1112e is frozen. T and future package planning must retain factory update-OFF and review the additional managed start/attach stock-provenance guard proposed in /tmp/fork-updater-answer.txt; no runtime change is made by these answers.
 
 **(c) Who can read today — observed source, main `32f47da69f`:**
 
@@ -140,11 +156,11 @@ Across T's standing SSH, S adds **explicit versioned, bounded request IDs and no
 
 **Scope/proof/cost:** Expected S paths: F/{protocol.rs,service.rs,client.rs,network.rs,main.rs}, new F/{arrival.rs,message_crypto.rs}, manager/foreman producers; app-server request_processors/{factory.rs,factory_reconcile.rs} and protocol bindings; S/{setup-forge-box.py,package.py,check_package.py}, new watcher/qualification/unit assets; docs/CHANGELOG/this plan. Exact files/adapters precede S code. Offline proofs: unauthorized UID cannot read keys/body or authenticate; hub/log scans show no new plaintext; crypto tamper/replay/key-rotation/recovery; cursor/lost-wake/reboot/revoke/expiry; waits cannot starve sends/acks; three client adapters and zero idle model requests; full R/T/package proofs. No crypto/performance proof claimed. Allow an additional whole build (~23min prior baseline), unmeasured security/protocol/client tests and Ops identity work; not a 25–35min total promise. Historical retention/live clients need owner decisions.
 
-**Review state:** Owner chose T subject to its no-weakened-check gate; this update is plan text only. S is a proposal, not an approved implementation. Stop here for owner review. **FORK PLAN 004 WRITTEN.**
+**Review state:** Owner chose T subject to its no-weakened-check gate; this update is plan text only. S has conditional owner approval (3f56caab): build only after the pilot works. Account/provisioning text below is permitted now; S code remains held. Plan 003 stays held pending the owner's ordering decision; this text does not place it after S. **FORK PLAN 004 WRITTEN.**
 
 ## R execution authorization
 
-Owner review 14:31 CST approves R now, not merge/deployment. Root renewal executes pinned package code/config only; failures must be nonzero with one ids-only log line. T is approved in principle but waits until R is installed/proven and launcher conditions pass; S is not approved. Seat-launch question was answered in ten lines before any R code/build. No Forge/dev-3 contact is authorized. Stop at FORK PACKAGE READY dist/1112e with every hash and the unchanged full bwrap digest.
+Owner review 14:31 CST approves R now, not merge/deployment. Root renewal executes pinned package code/config only; failures must be nonzero with one ids-only log line. T is approved in principle but waits until R is installed/proven and launcher conditions pass; S was not approved at that 14:31 review. The later 3f56caab decision approves S only after the pilot works. Seat-launch question was answered in ten lines before any R code/build. No Forge/dev-3 contact is authorized. Stop at FORK PACKAGE READY dist/1112e with every hash and the unchanged full bwrap digest.
 
 ## R proof result — 2026-11-12
 
