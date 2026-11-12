@@ -19,9 +19,15 @@ from codex_package.targets import PACKAGE_VARIANTS, TARGET_SPECS, PackageInputs
 
 ACTION = Path('.github/actions/build-codex-packages/action.yml')
 ARCHIVE = Path('.github/scripts/build-codex-package-archive.sh')
+# The archive wrapper also has conditional assembly (for example voice bundles).
+# An unreviewed change there must not bypass the canonical-layout inventory below.
+REVIEWED_ARCHIVE_SHA256 = '2abcc24b8cad163983abfaeedc0d2ece3fc1c27391526a47803c86e41d9e9386'
+SUPPORTED_TARGETS = ('x86_64-unknown-linux-gnu',)
 
 
 def upstream_contract(target='x86_64-unknown-linux-gnu', repo=REPO):
+    if target not in SUPPORTED_TARGETS:
+        raise RuntimeError('Unreviewed target: review its full upstream resources, including conditional voice bundles, before packaging')
     spec = TARGET_SPECS[target]
     if not spec.is_linux:
         raise RuntimeError('This fork package gate currently supports Linux targets only')
@@ -37,6 +43,8 @@ def upstream_contract(target='x86_64-unknown-linux-gnu', repo=REPO):
     known_flags = set(create_parser()._option_string_actions)
     if flags - known_flags:
         raise RuntimeError('Unknown upstream archive resource flags: ' + ', '.join(sorted(flags - known_flags)))
+    if hashlib.sha256((repo / ARCHIVE).read_bytes()).hexdigest() != REVIEWED_ARCHIVE_SHA256:
+        raise RuntimeError('Upstream archive assembly changed; review the complete Linux contract and update its reviewed digest')
     if '--exec-server-bin' not in flags or '--code-mode-host-bin' not in flags:
         raise RuntimeError('Upstream archive helper contract changed; review required')
     variants = [v for v in PACKAGE_VARIANTS.values() if v.cargo_bin in binaries]
@@ -61,13 +69,17 @@ def upstream_contract(target='x86_64-unknown-linux-gnu', repo=REPO):
                                  for p in (ACTION, ARCHIVE, Path('scripts/codex_package/layout.py'))})
 
 
-def check(directory, target='x86_64-unknown-linux-gnu'):
-    contract = upstream_contract(target)
+def check(directory, target='x86_64-unknown-linux-gnu', repo=REPO):
+    contract = upstream_contract(target, repo=repo)
     required = [*contract['upstreamFiles'], 'bin/codex-factory-bridge']
     missing = [p for p in required if not (directory / p).is_file()]
     nonexec = [p for p in required if p != 'codex-package.json' and (directory / p).is_file()
                and not os.access(directory / p, os.X_OK)]
     errors = []
+    external = [p for p in required if (directory / p).exists()
+                and not (directory / p).resolve().is_relative_to(directory.resolve())]
+    if external:
+        errors.append('Required files resolve outside the package: ' + ', '.join(external))
     if not missing:
         try:
             validate_package_dir(directory, PACKAGE_VARIANTS['codex'], TARGET_SPECS[target])
@@ -80,7 +92,7 @@ def check(directory, target='x86_64-unknown-linux-gnu'):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('directory', type=Path, nargs='?')
-    p.add_argument('--target', default='x86_64-unknown-linux-gnu', choices=sorted(TARGET_SPECS))
+    p.add_argument('--target', default='x86_64-unknown-linux-gnu', choices=SUPPORTED_TARGETS)
     p.add_argument('--contract', action='store_true')
     a = p.parse_args()
     try:

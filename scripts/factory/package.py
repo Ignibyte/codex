@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 
-from check_package import REPO, check, upstream_contract
+from check_package import REPO, SUPPORTED_TARGETS, check, upstream_contract
 from codex_package.targets import TARGET_SPECS
 from codex_package.v8 import resolve_codex_v8_cargo_env
 from codex_package.version import read_workspace_version
@@ -61,7 +61,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output', required=True, type=Path)
     p.add_argument('--source-commit', default='HEAD')
-    p.add_argument('--target', default='x86_64-unknown-linux-gnu', choices=sorted(TARGET_SPECS))
+    p.add_argument('--target', default='x86_64-unknown-linux-gnu', choices=SUPPORTED_TARGETS)
     p.add_argument('--target-dir', type=Path, default=Path(os.environ.get('CARGO_TARGET_DIR', REPO / 'codex-rs/target')))
     p.add_argument('--work-dir', type=Path)
     p.add_argument('--record-qualification', type=Path,
@@ -77,6 +77,10 @@ def main():
             raise RuntimeError('Package contract failed before qualification seal')
         manifest['qualification'] = json.loads(a.record_qualification.read_text())
         manifest['completeness'] = result
+        manifest['qualificationCommit'] = output(['git', 'rev-parse', 'HEAD'])
+        manifest['packagingScriptsSha256'] = {str(path.relative_to(REPO)): digest(path)
+                                            for path in (Path(__file__).resolve(), REPO / 'scripts/factory/check_package.py')}
+        shutil.copy2(REPO / 'docs/fork-mailbox.md', dest / 'INTERFACE.md')
         seal(dest, manifest)
         return
     if dest.exists():
@@ -118,8 +122,7 @@ def main():
     for binary in binaries:
         if not (stage / 'bin' / binary).exists():
             shutil.copy2(native / binary, stage / 'bin' / binary)
-    # The source-cited bridge interface is unchanged by packaging.
-    shutil.copy2(REPO / 'dist/1112b/INTERFACE.md', stage / 'INTERFACE.md')
+    shutil.copy2(REPO / 'docs/fork-mailbox.md', stage / 'INTERFACE.md')
     result = check(stage, a.target)
     print(json.dumps(result, indent=2), flush=True)
     if not result['passed']:
@@ -141,8 +144,9 @@ def main():
                     qualification={'status': 'pending packaged tool turns and all seven mailbox qualifiers'},
                     priorWorkspaceFailures={'count': 14, 'status': 'failures, not waived; see plan 002'})
     old_cli = REPO / 'dist/1112b/codex'
-    manifest['previousCliSha256'] = digest(old_cli)
-    manifest['cliByteIdenticalTo1112b'] = digest(stage / 'bin/codex') == manifest['previousCliSha256']
+    manifest['previousCliSha256'] = digest(old_cli) if old_cli.is_file() else None
+    manifest['cliByteIdenticalTo1112b'] = (digest(stage / 'bin/codex') == manifest['previousCliSha256']
+                                         if old_cli.is_file() else None)
     result['directory'] = str(dest)
     seal(stage, manifest)
     dest.parent.mkdir(exist_ok=True)
