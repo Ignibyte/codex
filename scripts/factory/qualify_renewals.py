@@ -436,6 +436,10 @@ def pipeline(a):
     for name,target in [('mount-tmp','/tmp'),('mount-run','/run')]:
         path=root/name; path.mkdir(mode=0o755)
         if target=='/tmp': path.chmod(0o1777)
+        else:
+            # nspawn requires its propagation directory on a volatile /run.
+            # This mount exists only in this private namespace, never on host /run.
+            run(['mount','-t','tmpfs','-o','mode=0755,size=256M','tmpfs',path])
         run(['mount','--bind',path,target])
     caller=a.caller_uid
     home=root/'home'; home.mkdir(mode=0o700); os.chown(home,caller,caller)
