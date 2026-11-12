@@ -232,6 +232,20 @@ enum Command {
         config: PathBuf,
     },
     #[cfg(target_os = "linux")]
+    /// Initiate the standing Forge-to-source SSH transport.
+    ConnectSource {
+        #[arg(long)]
+        state: PathBuf,
+        #[arg(long)]
+        config: PathBuf,
+    },
+    #[cfg(target_os = "linux")]
+    /// Serve source-side Unix clients through the root-controlled SSH entry.
+    SourceEntry {
+        #[arg(long)]
+        config: PathBuf,
+    },
+    #[cfg(target_os = "linux")]
     /// Serve a fixed read-only marley.work/v1 provider over stdio MCP.
     ObserveWork {
         #[command(flatten)]
@@ -709,6 +723,14 @@ fn main() -> Result<()> {
             config,
         } => {
             codex_factory::network::serve(&state, &socket, &config)?;
+        }
+        #[cfg(target_os = "linux")]
+        Command::ConnectSource { state, config } => {
+            codex_factory::network::connect_source(&state, &config)?;
+        }
+        #[cfg(target_os = "linux")]
+        Command::SourceEntry { config } => {
+            codex_factory::network::source_entry(&config)?;
         }
         #[cfg(target_os = "linux")]
         Command::ObserveWork { binding } => {
