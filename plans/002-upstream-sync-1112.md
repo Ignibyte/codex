@@ -1,6 +1,6 @@
 # Plan 002: upstream sync, 2026-11-12
 
-**Status:** Approved by the owner-seat reviewer, 2026-11-12; approval line below.
+**Status:** Plan approved; implementation, builds, and mailbox qualification complete. Awaiting reviewer decision on 14 verified upstream test failures and final merge/push.
 
 **Goal:** Bring in the latest upstream Codex changes while preserving persistent agents, roles, and authenticated cross-account mailbox communication.
 
@@ -110,3 +110,130 @@ Additional review fact: the imported upstream delta contains trailing whitespace
 ## Owner-approved recovery, 2026-11-12
 
 Owner seat approved rerunning the failed/unrun cases, then the full planned proof, release build, and mailbox qualification. Use `/srv/stacks/codex-tmp-1112` on NVMe for TMPDIR and disposable fixtures; leave the host `/tmp` unchanged, delete nothing outside that directory, and remove the directory when done. The approved private mount namespace maps only the test process's `/tmp` to a subdirectory there, because the failed helpers explicitly ignore TMPDIR. A fresh HOME/XDG configuration and isolated Git configuration keep owner settings out of fixture expectations. Keep eight build jobs and eight test threads. Recover the exact passed-case set from the original JUnit report rather than guessing which tests ran. No source change or failure waiver is authorized by this recovery approval.
+
+
+### Isolated recovery result
+
+The host `/tmp` remains its original tmpfs. Each test command runs in a private mount namespace with `/srv/stacks/codex-tmp-1112/mount-tmp` bound at its own `/tmp`. TMPDIR is `/tmp` **inside that namespace**, so both environment-aware and hardcoded helpers use the isolated NVMe directory. HOME/XDG directories are also isolated there; Cargo/Rustup caches and the verified V8 inputs are retained.
+
+The original JUnit report identified exactly 2,012 passing cases. A generated exact-case nextest filter excluded those cases, selecting only the 13 failures plus 22,676 unrun cases. The first recovery completed 263 cases (262 passed, one migration-path failure) before a controlled stop: the migration decoder rejects punctuated temporary ancestors. Its correction was solely the short namespace-local TMPDIR alias; no source was changed. The second recovery excluded all 2,274 accumulated passing cases and ran the remaining 22,427 cases. It completed in 1,171.11s including startup: **22,413 passed, 14 failed**. Across the original run and both recoveries, all 24,701 non-ignored cases are now accounted for: 24,687 passed and 14 failed. All 13 original quota cases and the migration-path case pass. There are no quota failures in either isolated recovery.
+
+The remaining failures are three core network-approval mock-count assertions, four exec-server shell-snapshot cases, one PTY path-search case, two V8 ABI/sandbox cases, and four voice cases. No waiver is assumed. The full planned workspace proof was then started from `2551c9e97060d90ddf11101de0d06d965387f0a1` in the corrected environment. A plain source archive of pinned upstream was prepared inside the same temporary directory for an exact-case comparison; no other checkout/repository or host service was changed.
+
+
+## Final proof and artifacts — review required
+
+Fork proof, build, and mailbox commands below used runtime source `2551c9e97060d90ddf11101de0d06d965387f0a1` (Rust source tree `2358c8d378d209061800c4bb7be101f584be3b30`), upstream Rust 1.95.0, eight Cargo jobs, and eight nextest threads. No runtime source changed after the upstream merge; subsequent branch changes are plan/documentation only. No fixture login, live Forge write, remote host action, or host `/tmp` change was used.
+
+### Full planned proof
+
+```text
+$ CARGO_BUILD_JOBS=8 just test --workspace --test-threads=8
+Finished test profile in 0.68s
+Summary [1279.229s] 24701 tests run:
+24687 passed (17 slow, 1 flaky), 14 failed, 54 skipped
+exit 100; 1281.47s including startup
+$ cd codex-rs && CARGO_BUILD_JOBS=8 cargo test --locked --workspace --doc
+171 doc-test targets: 2 passed, 0 failed, 3 ignored
+exit 0; 33.73s
+$ just test-github-scripts
+Ran 76 tests in 0.563s
+OK; exit 0
+$ git diff --check
+(no output; exit 0)
+$ git merge-base --is-ancestor c0cc9fc820f62e4dbdde68214dd6d792d6c8a7ee HEAD
+(no output; exit 0)
+$ git diff --exit-code 7d1a35a7b9 -- AGENTS.md WORKFLOW.md
+(no output; exit 0)
+```
+
+The 54 skips are nextest's configured ignored cases; non-Linux cfgs remain excluded. No snapshot was accepted. The full failed-case set exactly matches the isolated recovery's 14 cases. This is a completed full run, not the earlier interrupted run.
+
+### Fresh comparison against pinned upstream
+
+An unchanged `git archive` of `c0cc9fc820f62e4dbdde68214dd6d792d6c8a7ee` inside the approved temporary directory supplied the comparison tree. Eight key source/lockfile blobs were checked against that commit, including every affected test source; the comparison used `--locked`, the same toolchain, V8 pair, private TMPDIR, HOME/XDG, and Git configuration. Run only these exact 14 failed binary/test pairs, OR-combined with nextest `binary_id(=...) and test(...)` predicates:
+
+```text
+$ CARGO_BUILD_JOBS=8 just test --locked -p codex-core -p codex-exec-server -p codex-utils-pty -p codex-v8-poc -p codex-voice-host --test-threads=8 -E <the exact 14 binary/test pairs in the table>
+Finished test profile in 4m 38s
+Starting 14 tests across 5 binaries
+Summary [90.389s] 14 tests run: 0 passed, 14 failed, 3318 skipped
+exit 100; 369.37s including build
+PASS: identical 14 failed cases; 14/14 normalized failure signatures match
+```
+
+The comparison skips are unselected cases, not passes. Signature comparison checks exit type, primary failure location, and meaningful assertion/error content; it normalizes source/temporary paths, PIDs and ephemeral ports, and omits volatile PTY child-handle details. It does not compare full synthetic request dumps.
+
+| Binary / exact test | Failure on both trees | Comparison |
+| --- | --- | --- |
+| `codex-core::all` / `suite::network_approval::user_network_approval_once_session_and_denial_semantics::canonical_requirements` | Mock expects 2 matching requests; receives 1. | MATCH |
+| `codex-core::all` / `suite::network_approval::user_network_approval_once_session_and_denial_semantics::legacy_requirements` | Mock expects 2 matching requests; receives 1. | MATCH |
+| `codex-core::all` / `suite::network_approval::user_network_approval_once_session_and_denial_semantics::proxy_requirements` | Mock expects 2 matching requests; receives 1. | MATCH |
+| `codex-exec-server::exec_process` / `shell_snapshot::shell_snapshot_concurrent_replays_keep_independent_readers::blocked_descriptor_path` | Websocket recovery times out after 45 seconds. | MATCH |
+| `codex-exec-server::exec_process` / `shell_snapshot_v2_capture_failure_falls_back_and_retries::remote_pipe_recovery` | Shell snapshot differs: `xxxx` versus `xx`. | MATCH |
+| `codex-exec-server::exec_process` / `shell_snapshot_v2_capture_failure_falls_back_and_retries::remote_tty_recovery` | Shell snapshot differs: `xxxx` versus `xx`. | MATCH |
+| `codex-exec-server::exec_process` / `shell_snapshot_v2_filters_profile_exports_and_stays_in_memory::remote_sandbox` | Profile/sandbox stdout and exit-status snapshot differ. | MATCH |
+| `codex-utils-pty` / `child_command::linux_tests::path_search_stops_at_invalid_candidates` | Invalid first PATH candidate starts a child instead of stopping lookup. | MATCH |
+| `codex-v8-poc` / `tests::reads_typed_array_contents_with_the_compiled_binding_size` | Typed-array byte-length assertion reports 0. | MATCH |
+| `codex-v8-poc` / `tests::sandbox_feature_matches_linked_v8` | Linked V8 sandbox is true; prototype crate feature is false. | MATCH |
+| `codex-voice-host::bin/codex-voice-host` / `devices::playout::tests::jitter_buffer_preserves_packets_delivered_in_a_burst` | Jitter buffer unavailable. | MATCH |
+| `codex-voice-host::bin/codex-voice-host` / `devices::playout::tests::real_decoder_renders_current_rtp_and_rejects_pre_epoch_arrivals` | Jitter buffer unavailable. | MATCH |
+| `codex-voice-host::bin/codex-voice-host` / `transport::tests::negotiates_after_early_packet_loss_and_slow_tcp_connect` | Remote-candidate assertion fails. | MATCH |
+| `codex-voice-host::bin/codex-voice-host` / `transport::tests::negotiates_real_ordered_channel_over_udp_and_tcp` | Remote-candidate assertion fails. | MATCH |
+
+**These 14 failures are freshly reproduced on current pinned upstream; none is a new, observed fork-only failure. They remain failures. No plan-001 exception or new waiver is assumed.** WORKFLOW.md requires passing touched-crate tests, and the approved plan requires final review before main changes. The reviewer must authorize an exception or approve an amended fix scope before merge/push can proceed.
+
+### Release build and mailbox qualification
+
+```text
+$ cd codex-rs
+$ CARGO_BUILD_JOBS=8 CODEX_FACTORY_REVISION=2551c9e97060d90ddf11101de0d06d965387f0a1 cargo build --locked --release --target x86_64-unknown-linux-gnu --target-dir target/1112-release -p codex-cli -p codex-factory --features codex-install-context/factory --bin codex --bin codex-factory-bridge
+Finished release profile [optimized + debuginfo] in 14m 58s
+exit 0; 898.59s
+$ # Same packages/bins/target/revision; --profile dev-small, target/1112-faults;
+$ # features codex-install-context/factory,codex-app-server/factory-fixture-faults,codex-factory/fixture-faults; CARGO_INCREMENTAL=0
+Finished dev-small profile [unoptimized] in 2m 30s
+exit 0; 150.33s
+```
+
+Artifacts are `/srv/stacks/codex/dist/1112/codex` and `codex-factory-bridge`, plus `MANIFEST.json`, `SHA256SUMS`, and the source-cited `INTERFACE.md`. Both production executables target **x86_64-unknown-linux-gnu**, require **GLIBC_2.39**, and import **OPENSSL_3.0.0** symbols. The CLI additionally needs `libbz2.so.1.0`; the manifest lists all required library/version names. No Ubuntu-host compatibility test or installation is claimed. The production build has the factory install-context feature and no fault features; factory-info revision equals the full source commit above and `publicUpdatesAllowed=false`.
+
+- `codex`: `codex-cli 0.0.0`, 1631283872 bytes, SHA-256 `2b6ef470061662b04689a31c5d87158bcb385a0b4d28d23882c5af27ba176a8d`.
+- `codex-factory-bridge`: `codex-factory 0.0.0`, 47380888 bytes, SHA-256 `599a1bb17a7b78bd0e20cae1cc6cbdd5f148db57107b1aafda0eac339203fb08`.
+
+Each qualifier ran as `python3 scripts/factory/qualify_<lane>.py --binary <variant>/codex-factory-bridge --evidence <isolated output>`, adding `--cli <same variant>/codex` for native, lifecycle, and reconciliation. Production variants use the actual dist binaries; fault variants use the separate dev-small pair. Two existing checks beyond the initial five strengthen the requested mailbox proof: lifecycle verifies actual native completion/recording and bridge restart; reconciliation verifies five native admission/receipt crash boundaries. No qualification script or runtime source was edited.
+
+| Existing qualifier | Binary variant | Result |
+| --- | --- | --- |
+| `contract` | production | PASS: 64 checks; exit 0; 0.21s |
+| `credentials` | production | PASS: 7 checks; exit 0; 5.73s |
+| `recovery` | production | PASS: 9 checks; exit 0; 18.16s |
+| `native` | production | PASS: 5 checks; exit 0; 2.32s |
+| `lifecycle` | production | PASS: 4 checks; exit 0; 2.23s |
+| `durability` | fault-injection | PASS: 7 checks; exit 0; 1.71s |
+| `reconciliation` | fault-injection | PASS: 5 native crash lanes; exit 0; 10.68s |
+
+The seven programs pass, including all 96 counted contract/credential/recovery/native/lifecycle/durability checks and all five additional native crash/reconciliation lanes. Authenticated endpoints use separate fixture UIDs. These exercise receipts through completed, replay/idempotency, actual process deaths before commit/ack, no reinjection after native restart, queue-only delivery, idle wake/busy defer, terminal history, and fenced restore. Tests use synthetic credentials/model responses; no real account login or second-physical-host claim.
+
+`INTERFACE.md` covers exact send/receive/ack/status/retry/replay/backup/restore calls, receipt writers/order/idempotency, endpoint versus thread addressing, explicit wake admission/defer reasons, and native history reconciliation. All 71 file:line citation locations were checked. The manifest includes full source/upstream commits, compiler/Cargo/binary versions, ABI requirements, binary hashes, and truthful validation results. SHA256SUMS covers both production binaries, the interface, and the manifest.
+
+### Final scope and cleanup
+
+`git diff main...HEAD --stat` (including final documentation): **834 files changed, 28457 insertions(+), 6326 deletions(-)**. Scope check PASS: all 834 paths are in the pinned upstream delta or the three named documentation/changelog files; no unexpected untracked files. Original fork-only preservation PASS: 99 byte-identical files plus the one planned changelog entry.
+
+Only the pinned upstream import plus `plans/002-upstream-sync-1112.md`, `docs/fork-mailbox.md`, and `CHANGELOG-FORK.md` may differ from original main. AGENTS.md, WORKFLOW.md, existing plans and all fork-only runtime sources remain unchanged. The changelog's single planned append is the only alteration to an original fork-only file. Dist and build artifacts remain ignored. Runtime `codex-rs` tree identity is checked against the tested source commit after documentation.
+
+Removed `/srv/stacks/codex-tmp-1112` after recording all results. Verified zero remaining processes in task-owned temporary mount namespaces. Cleanup was limited to that directory; the host `/tmp` remains its original tmpfs and the release artifacts remain in dist/1112.
+
+```text
+$ cd dist/1112 && sha256sum -c SHA256SUMS
+codex: OK
+codex-factory-bridge: OK
+INTERFACE.md: OK
+MANIFEST.json: OK
+exit 0
+$ git diff --exit-code 2551c9e970 -- codex-rs
+(no output; exit 0)
+```
+
+Main remains `7d1a35a7b98ad50d7fdd9215f406b430914b11b9`; no main merge or push has occurred. Final review must cover the artifact manifest, the exact approved file scope, and the 14 verified upstream failures. The final `FORK 002 DONE <main sha>` marker is intentionally withheld until reviewer approval, --no-ff main merge, and origin/main push are complete.
