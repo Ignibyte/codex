@@ -354,3 +354,77 @@ Build from the unchanged Rust source tree at `6cb7fd718329da87bfd1dcf4c10536cf82
 **Files:** Add `scripts/factory/package.py`, `scripts/factory/check_package.py`, `scripts/factory/test_check_package.py`, and `scripts/factory/qualify_packaged_tools.py`; update this plan, `docs/fork-mailbox.md`, `WORKFLOW.md` with the permanent packaging rule, and one CHANGELOG-FORK.md line. Ignored output is the complete `dist/1112c` package. No other tracked files.
 
 **Proof:** Show the standalone completeness check FAIL on frozen dist/1112b and PASS on the new package; run its focused regression tests and relevant existing upstream package-builder tests. From the installed package path, use the owner's exact no-daemon/no-approval/ignore-config/ignore-rules/strict-config command line with GPT-6.1 Terra high for (a) an actual shell read under read-only, (b) an actual file write under workspace-write, and (c) a local stdio MCP tool if available. Use private CODEX_HOME/auth/config and isolated NVMe directories, with actual tool-event/output and filesystem assertions; do not count a no-tool response as a pass. Rerun all seven existing mailbox qualifiers, with production binaries from the new package and the matching separate fault pair. Record every result and any limitation in MANIFEST.json and this plan, including complete upstream file presence, ELF requirements, source identities, hashes and CLI version. Never print real credentials. The 14 original upstream-owned workspace failures stay failures; no full workspace rerun is requested. Finish with `FORK HOSTS READY <folder> <codex sha256 first 12> <code-mode-host sha256 first 12>`, then resume setup and plan 003.
+
+### Complete-package proof result
+
+Runtime source remains **`6cb7fd718329da87bfd1dcf4c10536cf82b1c367`**, with no Rust edits. The package build used eight jobs, Rust/Cargo 1.95.0, factory install context, STABLE_GIT_COMMIT/CODEX_FACTORY_REVISION set to that source, and the same verified V8 pair. The package entry point is the only dist creator; it invokes upstream's canonical builder and adds the full action binary union plus the bridge. Linux bwrap was built, stripped, hashed, and embedded before building the runtimes, following upstream's Cargo release action.
+
+```text
+$ python3 scripts/factory/package.py --output dist/1112c --source-commit 6cb7fd718329da87bfd1dcf4c10536cf82b1c367 --target x86_64-unknown-linux-gnu --target-dir /mnt/fast/target --work-dir <isolated fresh directory>
+Complete package created: /srv/stacks/codex/dist/1112c
+exit 0; 1019.56s
+$ python3 scripts/factory/check_package.py dist/1112b
+passed=false; missing canonical bin/codex, bin/codex-app-server,
+bin/codex-code-mode-host, bin/codex-exec-server, codex-package.json,
+codex-path/rg, codex-resources/bwrap, bin/codex-factory-bridge
+exit 1 (expected negative control; flat two-binary layout is incomplete)
+$ python3 scripts/factory/check_package.py dist/1112c
+passed=true; missing=[]; notExecutable=[]; errors=[]; exit 0
+$ python3 -B -m unittest discover -s scripts/factory -p test_check_package.py -v
+Ran 6 tests; OK
+$ CODEX_REPO_ROOT=/srv/stacks/codex python3 -B -m unittest discover -s scripts/codex_package -p 'test_*.py'
+Ran 27 tests; OK
+```
+
+The gate derives the current file inventory from upstream, detects a newly added action binary automatically, rejects each individually missing file and external-helper symlinks, and fails closed on unreviewed archive assembly changes. Its archive digest must be reviewed again after an upstream change. Other targets, including the musl voice-bundle branch, are refused until their whole resource contract is reviewed; they cannot silently pass the GNU gate.
+
+| Every upstream GNU Linux package file | Present in 1112c |
+| --- | --- |
+| codex-package.json | yes |
+| bin/codex | yes |
+| bin/codex-app-server | yes |
+| bin/codex-code-mode-host | yes |
+| bin/codex-exec-server | yes |
+| codex-resources/bwrap | yes |
+| codex-path/rg | yes |
+| Fork addition: bin/codex-factory-bridge | yes |
+
+No upstream file in this target's package contract is omitted. The root also contains INTERFACE.md, MANIFEST.json and SHA256SUMS. The source-cited interface now lives in tracked docs/fork-mailbox.md so future packaging does not depend on an ignored historical dist. The CLI hash **changed**, because this release follows the Linux bwrap-digest/source-stamping build. Its version remains **`codex-cli 0.167.2+ignibyte.1112b`** from the same source; model discovery remains numeric 0.167.2. Factory revision is the full source above and public updates remain disabled.
+
+- `bin/codex`: 1632394040 bytes; SHA-256 `87b000eb4f2b2e3be3944cbced938b3d6ad5b1fe9945946e26e6ec041ca36458`.
+- `bin/codex-code-mode-host`: 206347296 bytes; SHA-256 `1b3567c030899cf44333b335686e3b7c5dbd7db8af2bbe5f715ddd98db35a0fa`.
+- `codex-resources/bwrap`: stripped/embedded SHA-256 `bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023`.
+
+The manifest inventories every file's bytes/hash and every ELF's library/symbol requirements. All five first-party binaries require GLIBC_2.39; bwrap requires GLIBC_2.38; the pinned rg has no dynamic glibc requirement. Destination ABI checks remain the owner's installation step.
+
+The packaged live proofs used the available z690 ChatGPT login through private mode-0700 CODEX_HOME directories and mode-0600 credential copies. The common command prefix was exactly the owner's:
+
+```text
+dist/1112c/bin/codex --no-daemon --ask-for-approval never exec --ignore-user-config --ignore-rules --strict-config --sandbox <mode> -c model="gpt-6.1-terra" -c model_reasoning_effort="high" --cd <isolated directory> --skip-git-repo-check --json -- <prompt>
+```
+
+stdin was closed. No binaries in target/ were used for these turns. The qualification driver is `scripts/factory/qualify_packaged_tools.py --package dist/1112c --work-dir <fresh private directory>`.
+
+| Actual tool proof | Verified result |
+| --- | --- |
+| read-only shell: `cat note.txt; uname -n` | PASS: one completed command, exit 0; unpredictable file nonce and actual hostname in tool output; turn completed; 6.78s |
+| workspace-write shell: write/read tool-write.txt | PASS: one completed command, exit 0; actual file bytes match the requested nonce/newline; turn completed; 7.08s |
+| read-only local stdio MCP probe_note | PASS: one MCP event and independently recorded server call/nonce; turn completed; exit 0; 6.97s |
+
+The first MCP attempt was correctly refused by the unchanged `never` approval policy because the fixture omitted readOnlyHint. Fixed the local fixture's truthful read-only/nondestructive/closed-world annotations and reran **only that failed case** (`--cases mcp_readonly`); no approval policy was weakened. Both the initial failed attempt and successful retry are recorded in the manifest. The final proof's owner auth/config/cache hashes are unchanged. No missing-host diagnostic remains. Packaged app-server, code-mode-host, exec-server `--help`, rg `--version`, and bwrap `--version` all exit 0.
+
+The matching fault pair was rebuilt from the same source with the same embedded bwrap digest/source stamps, eight jobs, dev-small, CARGO_INCREMENTAL=0, and the two fixture-fault features: exit 0, 129.34s. The seven existing mailbox programs were then rerun with production inputs from dist/1112c/bin and the separate fault pair:
+
+| Qualifier | Result / elapsed |
+| --- | --- |
+| contract | PASS; 64 checks; exit 0; 0.18s |
+| credentials | PASS; 7 checks; exit 0; 4.97s |
+| recovery | PASS; 9 checks; exit 0; 18.55s |
+| native | PASS; 5 checks; exit 0; 2.14s |
+| lifecycle | PASS; 4 checks; exit 0; 2.26s |
+| durability | PASS; 7 checks; exit 0; 1.69s |
+| reconciliation | PASS; 5 actual native crash lanes; exit 0; 10.61s |
+
+All 96 counted checks and five crash lanes pass. The original 14 upstream-owned workspace failures remain failures, not waived; no full workspace suite rerun is claimed. No Forge/dev-3/live service was touched. Qualification is recorded through the package entry point's `--record-qualification` mode, which rechecks file hashes/completeness and seals the manifest/checksums.
+
+Final checksum proof PASS: INTERFACE.md, MANIFEST.json, all five bin/ executables, codex-package.json, codex-path/rg and codex-resources/bwrap are OK. Both dist/1112 and dist/1112b retain every captured file, hash, size, mode and mtime (including the two staged setup helpers that already existed in 1112b when the host brief froze it). Scope PASS: exactly eight named tracked files; Rust tree equals the tested source; git diff --check passes. Removed only `/srv/stacks/codex-hosts-tmp-1112c`, including private credential copies and fixture output, with zero remaining mailbox namespace processes. The host /tmp remains its original tmpfs. Package/proof source is `20e6f97c5f`; subsequent changes in this commit only record these results.
