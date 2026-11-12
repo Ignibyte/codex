@@ -1,6 +1,6 @@
 # Plan 002: upstream sync, 2026-11-12
 
-**Status:** Upstream sync merged and pushed as `163ad7adcf2145656c8d0bb13191731993f7047c`. The release-version follow-up below awaits its own final owner approval. The 14 upstream-owned results remain listed as failures, not waived.
+**Status:** Upstream sync merged and pushed as `163ad7adcf2145656c8d0bb13191731993f7047c`. The owner approved the release-version follow-up merge in `/tmp/fork-brief-uid.txt` (2026-11-12 10:58 CST). The 14 upstream-owned results remain listed as failures, not waived.
 
 **Goal:** Bring in the latest upstream Codex changes while preserving persistent agents, roles, and authenticated cross-account mailbox communication.
 
@@ -336,3 +336,9 @@ exit 1: Error: network_agent_uid_invalid
 `codex-rs/factory/src/service.rs:836` requires a local seat UID different from the service UID; the remote bootstrap also requires the remote seat UID to differ from its admitted proxy UID at line 863. `codex-rs/factory/src/network.rs:142` rejects allowed endpoint UIDs equal to the proxy UID. These are intentional existing boundaries, not missing shell arguments. In addition, `codex-rs/app-server/src/request_processors/factory.rs:65` requires service-owned binding files: a distinct-UID endpoint cannot read a mode-0600 service-owned file. Existing native fixtures use mode 0640 with a readable group, while credentials remain 0600.
 
 Neither probe created a registry, service key, credential, listener, or network connection. Removed only its disposable `/srv/stacks/codex-setup-probe-*` directory. No live host was contacted. Per AGENTS.md's instruction to stop and ask when stuck, setup implementation and plan 003 are paused for an owner decision: use the existing separate-UID service/proxy contract (including appropriate binding readability), or explicitly scope/approve a runtime change for trusted shared-UID operation. The requested tested setup runbook is not yet complete, and no setup-ready marker is claimed. The completed version-fix artifact and its proof remain ready for the separately required merge approval.
+
+### Owner approval and UID decision, 2026-11-12 10:58 CST
+
+The owner explicitly **APPROVED** the version fix in `/tmp/fork-brief-uid.txt`: merge with `--no-ff`, push main, and print `FORK VERSION MERGED <main sha>`. `dist/1112b` is the fleet installation build. Rechecked its four SHA256SUMS entries and the unchanged tested Rust tree before merge; only the five named tracked files differ from main. No test failure is reclassified or waived.
+
+The same brief resolves the setup blocker: retain the existing protocol, with a dedicated `fleet-bridge` service/proxy UID on each host and `ai` endpoint UIDs. Ops creates users/groups through ucs-ops; document system units with `User=fleet-bridge` and service-owned 0640 bindings where endpoint readability is needed. No runtime change is authorized. Setup will continue after the version merge, before plan 003.
