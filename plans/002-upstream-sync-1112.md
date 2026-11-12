@@ -466,3 +466,35 @@ Cleanup PASS: removed only the two task-owned setup scratch directories `/srv/st
 **Scope / files:** On `plan/002-apparmor-precondition`, update `scripts/factory/setup-forge-box.py`, `scripts/factory/test-setup-forge-box.py`, `scripts/factory/package.py`, `docs/factory-setup.md`, `docs/fork-mailbox.md`, `WORKFLOW.md`, `CHANGELOG-FORK.md`, and this plan. Refresh only 1112c's operator assets, manifest and checksums through package.py. Preserve every ELF and both older dist folders. Plan 003 remains unimplemented on its separate planning branch.
 
 **Smallest version / proof:** Add a preflight subcommand and enforce it at endpoint enrollment/proof steps under the actual endpoint UID. Read the bwrap digest from package-root/MANIFEST.json, verify the file, print its relocated path/digest, and run a fixed no-model read-only user/pid/network-namespace probe through that packaged bwrap. A failure must plainly name the Ops precondition and refuse; no full-access fallback or policy/ownership mutation. Service-only staging runs as fleet-bridge, so the runbook requires a separate ai preflight on every host and enrollment repeats it as ai. Extend the owned separate-UID SSH fixture with real successful preflight, a simulated bwrap denial that prevents enrollment before any credential/network action, and a relocated package-root check. Record z690's positive result without claiming Ubuntu/AppArmor policy qualification on the real hosts. Re-strip two copies of the existing cached bwrap without rebuilding and compare its published digest; retain Cargo cache reuse/strip-before-hash and never post-strip. Make package READY output include the full manifest bwrap digest. Audit runtime paths for relocation, document configurable absolute operator paths and the separate application-journal/home examples, recheck checksums/scope, then ask the owner to review the 1112c commits before any main merge.
+
+### Sandbox-precondition proof result
+
+Helper/builder source `0203d3503f`, runbook proof update `ad883b7eb9`. No Cargo build, binary rebuild, policy, xattr, sysctl, production ownership, live service or real-host operation was performed. All seven packaged runtime executable/resource SHA-256 digests match the before snapshot; codex remains `87b000eb4f2b…`, code-mode-host `1b3567c03089…`, and bwrap remains **`bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023`**. Two independent stripped staging copies of the existing same-source Cargo bwrap each reproduced that full digest; this is cached-artifact stability, not a claim of clean-build reproducibility across toolchains/paths.
+
+```text
+$ # No-model probe as endpoint UID, through the packaged bwrap:
+$ python3 <package>/setup-forge-box.py preflight --bin-dir <package>/bin
+sandbox.passed=true; uid=65532 in the separate-UID fixture
+bwrapSha256=bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023
+$ sudo -n unshare --mount --propagation private python3 <isolated>/entry.py
+Setup/sandbox fixture exit: 0
+passed=true; checks=9; seats=3; directedEdges=4; durableMessagesAfterRestart=4
+receiptsPerMessage=2; serviceUid=65534; endpointUid=65532; modelsStarted=0
+realFleetHostsTested=false
+$ TMPDIR=<isolated> python3 -B -m unittest discover -s scripts/factory -p test_check_package.py -v
+Ran 6 tests; OK
+```
+
+The nine-check fixture adds successful endpoint preflight/relocated resource lookup and a simulated `RTM_NEWADDR: Operation not permitted` that emits a plain path/digest/ucs-ops refusal before reading enrollment inputs. It retains the seven real local SSH/enrollment/route/restart checks. Full actual output is pasted in SETUP.md. A separate reflink copy of the **whole folder** at a new prefix passed its packaged preflight as uid 1000, printing the relocated bwrap path and original full manifest digest; relocated CLI/bridge versions also passed. Runtime/setup source contains no fixed `/home/ai/.local/share/fleet-codex` package prefix. Only the client journal defaults use `/home/ai/fleet-spec-project`; CODEX_HOME examples and generated absolute bindings/units/SSH paths are explicitly operator configuration to update on relocation.
+
+z690's `/proc/sys/kernel/apparmor_restrict_unprivileged_userns` is absent and unchanged. Actual restricted-Ubuntu approval remains Ops' work and must be verified by the owner on each endpoint host after the ucs-ops change; the injected denial is not an actual AppArmor policy test. The helper does not modify policy, ownership or xattrs and offers no danger-full-access fallback. The runbook makes root-owned bwrap plus its root-only xattr/profile a precondition on restricted Ubuntu and requires the probe as ai, not the bridge service UID.
+
+Only operator text assets, manifest and checksums were refreshed through package.py. All source/packaged helper/doc bytes match; all SHA256SUMS entries pass. A first digest-verification command had the wrong working directory; its corrected absolute-path rerun passed. The packager now emits the required digest mechanically:
+
+```text
+FORK HOSTS READY /srv/stacks/codex/dist/1112c 87b000eb4f2b 1b3567c03089 BWRAP bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023
+```
+
+No main merge is authorized yet. The owner explicitly requested review of 1112c commits `00d4dab308`, `20e6f97c5f`, `1145eeb133` and their setup/precondition follow-ups before any main merge. The 14 earlier upstream-owned workspace failures remain failures, not waived; Rust source is unchanged from `6cb7fd7183`.
+
+Final scope is exactly the eight named follow-up files. Removed only `/srv/stacks/codex-apparmor-tmp-1112c`, including the relocated reflink package and synthetic fixture keys/state; zero fixture namespace processes remained. The host /tmp remains tmpfs. No main merge or push to main occurred in this follow-up.
