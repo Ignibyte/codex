@@ -16,6 +16,7 @@ sys.path.insert(0, str(REPO / 'scripts'))
 from codex_package.cli import create_parser
 from codex_package.layout import build_package_dir, validate_package_dir
 from codex_package.targets import PACKAGE_VARIANTS, TARGET_SPECS, PackageInputs
+from codex_package.version import read_workspace_version
 
 ACTION = Path('.github/actions/build-codex-packages/action.yml')
 ARCHIVE = Path('.github/scripts/build-codex-package-archive.sh')
@@ -23,6 +24,22 @@ ARCHIVE = Path('.github/scripts/build-codex-package-archive.sh')
 # An unreviewed change there must not bypass the canonical-layout inventory below.
 REVIEWED_ARCHIVE_SHA256 = '2abcc24b8cad163983abfaeedc0d2ece3fc1c27391526a47803c86e41d9e9386'
 SUPPORTED_TARGETS = ('x86_64-unknown-linux-gnu',)
+SHIPPED = Path('scripts/factory/upstream-shipped-linux.json')
+
+
+def shipped_contract(target, repo):
+    record = json.loads((repo / SHIPPED).read_text())
+    paths = record['paths']
+    if (record['schema'] != 1 or record['forkTarget'] != target
+            or record['releaseVersion'] != read_workspace_version().split('+')[0]
+            or len(paths) != record['installedPaths'] or len(set(paths)) != len(paths)
+            or any(not re.fullmatch(r'[A-Za-z0-9_./-]+', p) or '..' in Path(p).parts
+                   or Path(p).is_absolute() for p in paths)
+            or record['launcher'] != dict(path='codex', target='bin/codex',
+                upstreamSource='scripts/install/install.sh',
+                sourceSha256=hashlib.sha256((repo / 'scripts/install/install.sh').read_bytes()).hexdigest())):
+        raise RuntimeError('Shipped release inventory changed or no longer matches; review the release and installer')
+    return record
 
 
 def upstream_contract(target='x86_64-unknown-linux-gnu', repo=REPO):
@@ -50,7 +67,7 @@ def upstream_contract(target='x86_64-unknown-linux-gnu', repo=REPO):
     variants = [v for v in PACKAGE_VARIANTS.values() if v.cargo_bin in binaries]
     if not variants:
         raise RuntimeError('No upstream package variants matched BASE_BINARIES')
-    # Let upstream itself materialize the required Linux layout. No fork file list.
+    # Union the canonical builder with the real release and installed launcher.
     with tempfile.TemporaryDirectory(prefix='fork-package-contract-') as tmp:
         root = Path(tmp)
         dummy = root / 'executable'; dummy.write_bytes(b'contract fixture\n'); dummy.chmod(0o755)
@@ -64,18 +81,25 @@ def upstream_contract(target='x86_64-unknown-linux-gnu', repo=REPO):
             validate_package_dir(layout, variant, spec)
             files.update(str(p.relative_to(layout)) for p in layout.rglob('*') if p.is_file())
     files.update('bin/' + b for b in binaries)
+    shipped = shipped_contract(target, repo)
     return dict(target=target, binaries=binaries, upstreamFiles=sorted(files),
+                shippedFiles=shipped['paths'], shippedRelease=shipped,
                 upstreamSources={str(p): hashlib.sha256((repo / p).read_bytes()).hexdigest()
-                                 for p in (ACTION, ARCHIVE, Path('scripts/codex_package/layout.py'))})
+                                 for p in (ACTION, ARCHIVE, Path('scripts/codex_package/layout.py'), SHIPPED)})
 
 
 def check(directory, target='x86_64-unknown-linux-gnu', repo=REPO):
     contract = upstream_contract(target, repo=repo)
-    required = [*contract['upstreamFiles'], 'bin/codex-factory-bridge']
+    required = sorted(set(contract['upstreamFiles'] + contract['shippedFiles'] + ['bin/codex-factory-bridge']))
     missing = [p for p in required if not (directory / p).is_file()]
-    nonexec = [p for p in required if p != 'codex-package.json' and (directory / p).is_file()
+    executables = [p for p in required if p.startswith(('bin/', 'codex-path/', 'codex-resources/voice/bin/'))
+                   or p in ('codex', 'codex-resources/bwrap')]
+    nonexec = [p for p in executables if (directory / p).is_file()
                and not os.access(directory / p, os.X_OK)]
     errors = []
+    launcher = directory / 'codex'
+    if not launcher.is_symlink() or os.readlink(launcher) != 'bin/codex':
+        errors.append('Top-level codex must be the relative symlink bin/codex')
     external = [p for p in required if (directory / p).exists()
                 and not (directory / p).resolve().is_relative_to(directory.resolve())]
     if external:

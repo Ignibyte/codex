@@ -255,7 +255,7 @@ class AssembleTests(unittest.TestCase):
         stage(runtime, staged, target)
         seal(staged, target)
         self.metadata["target"] = target
-        for version in ("0.154.0-beta.2", "0.154.0"):
+        for version in ("0.154.0-beta.2", "0.154.0", "0.167.2+ignibyte.1112b"):
             with self.subTest(version=version):
                 self.metadata["version"] = version
                 (self.package / "codex-package.json").write_text(

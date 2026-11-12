@@ -1,7 +1,7 @@
-# Forge / dev-3 bridge setup — complete package 1112c
+# Forge / dev-3 bridge setup — complete package 1112d
 
 Owner installation only. This runbook does not deploy or start anything from z690.
-Install **all of dist/1112c**, including its root metadata and sibling directories.
+Install **all of dist/1112d**, including its root metadata, `codex -> bin/codex` link and sibling directories. Keep the complete `codex-resources/voice/` tree: helper, runtime libraries/plugins, manifests, notices and licenses. 1112c is frozen and lacks that shipped bundle. 1112d preserves its CLI and bwrap bytes; the new install path still needs Ops' AppArmor permission.
 The runtime source is 6cb7fd718329da87bfd1dcf4c10536cf82b1c367; CLI SHA-256 starts
 87b000eb4f2b and code-mode-host starts 1b3567c03089. The version remains
 0.167.2+ignibyte.1112b. Check the supplied manifest's ABI requirements on both hosts.
@@ -35,7 +35,7 @@ the existing proxy rejects an ai-owned ancestor of its protected config/key file
 
 | Path | Owner:group | Mode | Host |
 | --- | --- | --- | --- |
-| /opt/fleet-codex and package 1112c, bin/, codex-path/, codex-resources/ | root:root | 0755 directories/executables; 0644 docs/metadata | both |
+| /opt/fleet-codex and package 1112d, bin/, codex-path/, codex-resources/ | root:root | 0755 directories/executables; 0644 docs/metadata | both |
 | /var/lib/fleet-manager-bridge | fleet-bridge:fleet-bridge-clients | 2710 | both |
 | /var/lib/fleet-manager-bridge/run | fleet-bridge:fleet-bridge-clients | 2710 | both |
 | run/bridge.sock or run/remote.sock | fleet-bridge:fleet-bridge-clients | 0660, created by service | Forge / dev-3 |
@@ -62,7 +62,7 @@ Set these in each operator shell; they contain no secrets:
 
 ```sh
 # Both hosts — operator shell
-PKG=/opt/fleet-codex/1112c
+PKG=/opt/fleet-codex/1112d
 BIN=$PKG/bin
 STATE=/var/lib/fleet-manager-bridge
 CFG=/etc/fleet-manager-bridge
@@ -72,7 +72,7 @@ After account creation, **Ops/root on each host** installs the whole verified
 folder from its received staging copy. `SOURCE` is that absolute copy, not bin/:
 
 ```sh
-# Both hosts — Ops/root; set SOURCE to the received whole dist/1112c folder
+# Both hosts — Ops/root; set SOURCE to the received whole dist/1112d folder
 (cd "$SOURCE" && sha256sum -c SHA256SUMS)
 install -d -o root -g root -m 0755 /opt/fleet-codex
 test ! -e "$PKG"
@@ -102,7 +102,7 @@ python3 "$PKG/setup-forge-box.py" preflight --bin-dir "$BIN"
 ```
 
 The script reads `bwrapEmbeddedSha256` from `$PKG/MANIFEST.json`, verifies the
-actual file, and prints its installed path and full digest. For 1112c the file is
+actual file, and prints its installed path and full digest. For 1112d the file is
 `$PKG/codex-resources/bwrap`, SHA-256
 `bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023`.
 It runs `/usr/bin/true` through that exact bwrap with a read-only root and new
@@ -128,7 +128,7 @@ read-only/workspace-write turns on the actual hosts. No binary rebuild is needed
 
 ### Relocation and digest pins
 
-`/opt/fleet-codex/1112c` is this runbook's example input, not a compiled package
+`/opt/fleet-codex/1112d` is this runbook's example input, not a compiled package
 location. The package uses relative bin/resource/path metadata; the bridge takes
 explicit state/socket/config paths; preflight derives bwrap and MANIFEST.json
 from the supplied absolute bin directory. Nothing in the runtime/setup requires
@@ -213,7 +213,7 @@ It grants **ai**, not fleet-bridge, permission to run exactly this pinned comman
 as fleet-bridge, with these two SSH variables preserved only for that command:
 
 ```text
-Cmnd_Alias FLEET_BRIDGE_DEV3 = /opt/fleet-codex/1112c/bin/codex-factory-bridge remote-entry --state /var/lib/fleet-manager-bridge/service --host REAL_DEV3_HOST_UUID --key-id REAL_TRANSPORT_KEY_UUID
+Cmnd_Alias FLEET_BRIDGE_DEV3 = /opt/fleet-codex/1112d/bin/codex-factory-bridge remote-entry --state /var/lib/fleet-manager-bridge/service --host REAL_DEV3_HOST_UUID --key-id REAL_TRANSPORT_KEY_UUID
 Defaults!FLEET_BRIDGE_DEV3 env_keep += "SSH_ORIGINAL_COMMAND SSH_CONNECTION"
 ai ALL=(fleet-bridge) NOPASSWD: FLEET_BRIDGE_DEV3
 ```
@@ -225,7 +225,7 @@ existing `/home/ai/.ssh/authorized_keys` (directory ai:ai 0700, file ai:ai 0600)
 preserving existing operator keys. Its exact shape is:
 
 ```text
-restrict,command="/usr/bin/sudo -n -u fleet-bridge -- /opt/fleet-codex/1112c/bin/codex-factory-bridge remote-entry --state /var/lib/fleet-manager-bridge/service --host REAL_DEV3_HOST_UUID --key-id REAL_TRANSPORT_KEY_UUID" ssh-ed25519 PUBLIC_KEY fleet-dev3-bridge
+restrict,command="/usr/bin/sudo -n -u fleet-bridge -- /opt/fleet-codex/1112d/bin/codex-factory-bridge remote-entry --state /var/lib/fleet-manager-bridge/service --host REAL_DEV3_HOST_UUID --key-id REAL_TRANSPORT_KEY_UUID" ssh-ed25519 PUBLIC_KEY fleet-dev3-bridge
 ```
 
 No PTY/forwarding/agent forwarding is permitted for that key. remote-entry itself
@@ -298,7 +298,7 @@ User=fleet-bridge
 Group=fleet-bridge
 SupplementaryGroups=fleet-bridge-clients
 UMask=0077
-ExecStart=/opt/fleet-codex/1112c/bin/codex-factory-bridge serve --state /var/lib/fleet-manager-bridge/service --socket /var/lib/fleet-manager-bridge/run/bridge.sock
+ExecStart=/opt/fleet-codex/1112d/bin/codex-factory-bridge serve --state /var/lib/fleet-manager-bridge/service --socket /var/lib/fleet-manager-bridge/run/bridge.sock
 Restart=no
 KillMode=control-group
 TimeoutStopSec=10
@@ -325,7 +325,7 @@ User=fleet-bridge
 Group=fleet-bridge
 SupplementaryGroups=fleet-bridge-clients
 UMask=0077
-ExecStart=/opt/fleet-codex/1112c/bin/codex-factory-bridge connect-host --state /var/lib/fleet-manager-bridge/proxy --socket /var/lib/fleet-manager-bridge/run/remote.sock --config /etc/fleet-manager-bridge/transport/proxy.json
+ExecStart=/opt/fleet-codex/1112d/bin/codex-factory-bridge connect-host --state /var/lib/fleet-manager-bridge/proxy --socket /var/lib/fleet-manager-bridge/run/remote.sock --config /etc/fleet-manager-bridge/transport/proxy.json
 Restart=no
 KillMode=control-group
 TimeoutStopSec=10
@@ -434,7 +434,7 @@ a dedicated CODEX_HOME, normal login in that home, fresh group membership, and:
 export CODEX_HOME=/home/ai/.local/share/fleet-codex/homes/$ROLE
 export CODEX_FACTORY_BINDING=/etc/fleet-manager-bridge/$ROLE.binding.json
 export CODEX_FACTORY_SERVICE_UID="$FLEET_UID"
-/opt/fleet-codex/1112c/bin/codex app-server --listen stdio://
+/opt/fleet-codex/1112d/bin/codex app-server --listen stdio://
 ```
 
 The existing job controller must own that app-server transport; do not start a

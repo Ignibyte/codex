@@ -24,25 +24,59 @@ class CompletePackageTests(unittest.TestCase):
         for binary in gate.upstream_contract()['binaries'] + ['codex-factory-bridge']:
             if not (self.package / 'bin' / binary).exists():
                 shutil.copy2(self.source, self.package / 'bin' / binary)
+        for relative in gate.upstream_contract()['shippedFiles']:
+            path = self.package / relative
+            if relative == 'codex':
+                path.symlink_to('bin/codex')
+            elif not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(self.source, path)
 
     def test_each_required_file_is_a_release_blocker(self):
         self.assertTrue(gate.check(self.package)['passed'])
-        for relative in gate.upstream_contract()['upstreamFiles'] + ['bin/codex-factory-bridge']:
+        required = set(gate.upstream_contract()['upstreamFiles'] + gate.upstream_contract()['shippedFiles']
+                       + ['bin/codex-factory-bridge'])
+        for relative in sorted(required):
             file = self.package / relative
             content, mode = file.read_bytes(), file.stat().st_mode
             file.unlink()
             result = gate.check(self.package)
             self.assertFalse(result['passed'], relative)
             self.assertIn(relative, result['missing'])
-            file.write_bytes(content); file.chmod(mode)
+            if relative == 'codex':
+                file.symlink_to('bin/codex')
+            else:
+                file.write_bytes(content); file.chmod(mode)
         self.assertTrue(gate.check(self.package)['passed'])
 
     def fixture_repo(self):
         repo = self.root / 'upstream'
-        for relative in (gate.ACTION, gate.ARCHIVE, Path('scripts/codex_package/layout.py')):
+        for relative in (gate.ACTION, gate.ARCHIVE, gate.SHIPPED,
+                         Path('scripts/install/install.sh'), Path('scripts/codex_package/layout.py')):
             (repo / relative).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(gate.REPO / relative, repo / relative)
         return repo
+
+    def test_launcher_must_be_the_installed_relative_link(self):
+        launcher = self.package / 'codex'
+        launcher.unlink(); shutil.copy2(self.source, launcher)
+        self.assertFalse(gate.check(self.package)['passed'])
+        launcher.unlink(); launcher.symlink_to('bin/codex-exec-server')
+        self.assertFalse(gate.check(self.package)['passed'])
+
+    def test_licenses_are_required_but_need_not_be_executable(self):
+        license = self.package / 'codex-resources/voice/licenses/LGPL-2.1.txt'
+        license.chmod(0o644)
+        self.assertTrue(gate.check(self.package)['passed'])
+        license.unlink()
+        self.assertIn(str(license.relative_to(self.package)), gate.check(self.package)['missing'])
+
+    def test_release_version_change_requires_a_new_shipped_inventory(self):
+        repo = self.fixture_repo(); path = repo / gate.SHIPPED
+        record = json.loads(path.read_text()); record['releaseVersion'] = '0.167.1'
+        path.write_text(json.dumps(record))
+        with self.assertRaisesRegex(RuntimeError, 'Shipped release inventory'):
+            gate.check(self.package, repo=repo)
 
     def test_new_upstream_binary_is_required_without_a_fork_list_update(self):
         repo = self.fixture_repo(); action = repo / gate.ACTION
