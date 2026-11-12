@@ -464,7 +464,7 @@ def pipeline(a):
     result={'renewals':proof('renewals', ['/usr/bin/python3',__file__,'--container','--package',a.package,
                         '--fault-bridge',a.fault_bridge,'--work-dir',renewal],uid=0,timeout=270)}
     result['renewals'].update(json.loads((renewal/'renewal-result.json').read_text()))
-    result['setupCompatibility']=proof('setup-compatibility',['/usr/bin/python3',REPO/'scripts/factory/test-setup-forge-box.py',
+    result['setupCompatibility']=proof('setup-compatibility',['/usr/bin/unshare','--mount','--fork','/usr/bin/python3',REPO/'scripts/factory/test-setup-forge-box.py',
             '--root','/tmp/setup-proof-'+uuid.uuid4().hex,'--dist',a.package],uid=0)
     result['mailbox']={}
     for name in ('contract','credentials','recovery','native','lifecycle','durability','reconciliation'):
