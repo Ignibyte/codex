@@ -145,3 +145,52 @@ Across T's standing SSH, S adds **explicit versioned, bounded request IDs and no
 ## R execution authorization
 
 Owner review 14:31 CST approves R now, not merge/deployment. Root renewal executes pinned package code/config only; failures must be nonzero with one ids-only log line. T is approved in principle but waits until R is installed/proven and launcher conditions pass; S is not approved. Seat-launch question was answered in ten lines before any R code/build. No Forge/dev-3 contact is authorized. Stop at FORK PACKAGE READY dist/1112e with every hash and the unchanged full bwrap digest.
+
+## R proof result — 2026-11-12
+
+All R proofs PASS on code head `f760cedab810e1dc9b5128d1ba0a3d599dc4ebf9` (`plan/004-renewals`). Runtime/voice source `453f5ee1190ded9792155d142ef751dcc3e13963`; Rust tree `b16fc65d8703e89bd7976c0b40732125156adc59` equals HEAD. Main remains `32f47da69f46569d01d91ad2c412366f0c64bf07`; no merge, deployment or fleet-host contact.
+
+The first unqualified package was retained only inside the task directory, then rebuilt after fixing candidate-file writes: a deterministic private temporary file now fsyncs before atomic rename, and a partial temporary is rebuilt from the same committed nonce. Legacy rotation keeps relative output support. The generated root unit bounds/retains SETUID/SETGID for the approved UID drop under NoNewPrivileges; real child UIDs have zero effective/permitted/ambient capabilities. Remote stderr is never projected into the root log, including a peer deliberately echoing its bearer. The root allowlist is the only runtime configuration; setup/bindings are read only during explicit rendering.
+
+Proof uses NVMe TMPDIR/private /tmp, a private volatile /run required by nspawn, task-owned /etc inside isolated systemd, separate service/endpoint UIDs, and no host bus. The legacy setup fixture has its own mount namespace so its test sudoers cannot affect later lanes. All failed fixture iterations were corrected before the complete planned proof below. No production sandbox or authentication check was waived.
+
+```text
+$ RUSTUP_TOOLCHAIN=1.95.0 CARGO_BUILD_JOBS=8 CARGO_TARGET_DIR=/mnt/fast/target TMPDIR=$TASK/tmp cargo test --locked --manifest-path codex-rs/Cargo.toml -p codex-factory -- --test-threads=8
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+(binary target: 0 tests, PASS)
+$ TMPDIR=$TASK/tmp python3 -m unittest discover -s scripts/factory -p test_check_package.py
+Ran 9 tests
+OK
+$ rustfmt --check --edition 2024 --config skip_children=true codex-rs/factory/src/main.rs codex-rs/factory/src/service.rs
+exit 0
+$ RUSTUP_TOOLCHAIN=1.95.0 CARGO_BUILD_JOBS=8 CARGO_TARGET_DIR=/mnt/fast/target TMPDIR=$TASK/tmp python3 scripts/factory/package.py --output dist/1112e --work-dir $TASK/package-2
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.25s
+    Finished `release` profile [optimized + debuginfo] target(s) in 13m 27s
+Complete package created: /srv/stacks/codex/dist/1112e
+$ # package.py --record-qualification refreshed/sealed the final operator assets before proof; status remained pending.
+$ RUSTUP_TOOLCHAIN=1.95.0 CARGO_BUILD_JOBS=8 CARGO_TARGET_DIR=/mnt/fast/target TMPDIR=$TASK/tmp python3 scripts/factory/qualify_renewals.py --package dist/1112e --work-dir $TASK/full-proof-complete --full-package-proof
+{"status": "passed", "mailboxLanes": 7, "renewals": true, "setup": true, "packagedTools": true, "externalModelRequests": 0, "externalFleetHostContacts": 0, "bwrapSha256": "bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023"}
+```
+
+Same-source fault pair uses dev-small, GNU target, eight jobs, the pinned checksum-verified V8 pair, and factory/app-server fixture-fault features; production binaries contain no fixture faults. All seven lanes ran against the appropriate new production/fault pair:
+
+| Proof | Result | Seconds |
+| --- | --- | ---: |
+| Renewals / isolated generated systemd timer | 21 PASS | 20.2 |
+| Legacy setup / actual loopback OpenSSH | 3 seats, 4 directed edges, restart/replay PASS | 4.17 |
+| contract | 64 PASS | 0.21 |
+| credentials | 7 PASS | 5.63 |
+| recovery | 9 PASS | 17.35 |
+| native | 5 PASS | 2.07 |
+| lifecycle | 4 PASS | 1.67 |
+| durability | 7 PASS | 1.52 |
+| reconciliation | 5 lanes PASS | 10.38 |
+| Packaged shell / workspace write / MCP | 3 PASS | 2.12 |
+
+Renewal checks include deferred local conversation and two timer rotations per local seat with zero remote hosts; same-key lapse restoration/40 renewals with one key slot; wrong key/clock floor/no shortening (crate tests); immutable grants/sequence/receipts; singleton/UID/code/mode/TTL rejection, relative destinations and symlinked allowlist refusal, wrong pinned SSH host-key refusal; five real process-death boundaries (prepare, registry commit, candidate rename, output, confirmation); stale publisher rejection inside overlap; real pinned SSH publication/lost ack/outage/secret-echo refusal; outage beyond TTL; later explicit admission with reserved IDs; host/seat revocation; and reboot fencing. A failed actual unit reports ExecMainStatus=1/Result=exit-code and exactly one ids-only failure line.
+
+Each packaged tool case completed through the required packaged code-mode host, returned the verified real effect to the local model fixture, and made exactly two local model requests. No owner login/config/cache was read; external model requests = 0. Full upstream shipped 45-path union, voice source/runtime, root launcher and fork unit assets pass completeness/checksums. All hashes are in dist/1112e/MANIFEST.json and SHA256SUMS. Bwrap `bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023` is unchanged. Version remains 0.167.2+ignibyte.1112b; actual ABI requirements remain in the manifest.
+
+The 14 recorded upstream-owned workspace failures remain failures in plan 002, not waived; no full workspace rerun was requested for R. Real Forge/dev-3 install, AppArmor path approval, current live backend and R operation on those hosts remain owner/Ops review. T runtime, its launcher/SSH-policy changes, S and plan 003 were not built. Stop at FORK PACKAGE READY dist/1112e for install review.
+
+Implementation citations in INTERFACE.md were mapped to this qualified Rust tree, including the new credentialCurrent sync flag. The final package seal records this proof; the temporary NVMe task tree is removed after sealing. Final source review and install approval remain with the owner.
