@@ -331,11 +331,11 @@ def fixture(a):
                       'c=m["validate_allowlist"]('+repr(str(allowlist))+'); '
                       'print(json.dumps([json.loads(m["actor_run"](a,["/usr/bin/python3","-I","-c",'+repr(child_code)+'])) '
                       'for a in [c["service"],c["seats"][0]["actor"]]]))')
-        identity=run(['systemd-run','--wait','--pipe','--collect','--unit=renewal-identities',
+        identity_probe=run(['systemd-run','--wait','--pipe','--collect','--unit=renewal-identities',
                    '-p','User=root','-p','Group=root','-p','NoNewPrivileges=yes','-p','PrivateTmp=yes',
                    '-p','CapabilityBoundingSet=CAP_SETUID CAP_SETGID','-p','AmbientCapabilities=CAP_SETUID CAP_SETGID',
                    '/usr/bin/python3','-I','-c',identity_code])
-        identities=json.loads(identity.stdout)
+        identities=json.loads(identity_probe.stdout)
         assert [r['uid'] for r in identities]==[SERVICE,AGENT]
         assert all(r['caps']['NoNewPrivs']=='1' and all(int(r['caps'][key],16)==0
                    for key in ('CapEff','CapPrm','CapAmb')) for r in identities)
