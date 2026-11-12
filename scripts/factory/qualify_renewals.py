@@ -227,6 +227,12 @@ def fixture(a):
         assert 'code=publisher_failed' in refused and not re.search('[0-9a-f]{64}',refused)
         poison.unlink(); assert len(broker()['seats'])==1
         checks.append('remote_peer_echoing_a_bearer_in_stderr_cannot_leak_it_into_the_root_failure_line')
+        correct_pin=pin.read_text(); installed=credential('foreman-bot').read_bytes()
+        pin.write_text('renewal-publisher-proof '+(pubroot/'client.pub').read_text()); pin.chmod(0o600)
+        force_due('foreman-bot'); assert 'code=publisher_failed' in broker(expected=1)
+        assert credential('foreman-bot').read_bytes()==installed
+        pin.write_text(correct_pin); pin.chmod(0o600); assert len(broker()['seats'])==1
+        checks.append('wrong_pinned_ssh_host_key_refuses_publication_without_fallback_or_file_change')
         stop(sshd); (pubroot/'sshd.pid').unlink(missing_ok=True)
         old_file=credential('foreman-bot').read_bytes(); force_due('foreman-bot')
         broker(expected=1)
@@ -240,6 +246,7 @@ def fixture(a):
         os.close(fd)
         for mutation, code in [(lambda c: c['files'].update({'setup-forge-box.py': '0'*64}), 'renewal_code_changed'),
                                (lambda c: c['seats'][0]['actor'].update(uid=0), 'renewal_actor_identity'),
+                               (lambda c: c['seats'][0]['policy'].update(credential='relative.json'), 'absolute_simple_path_required'),
                                (lambda c: c.update(seatTtl=3601), 'renewal_seat_ttl')]:
             altered = copy.deepcopy(config); mutation(altered); save(allowlist, altered)
             assert code in broker(expected=1)
@@ -247,6 +254,11 @@ def fixture(a):
         assert 'root_config_mode' in broker(expected=1)
         allowlist.chmod(0o600)
         checks.append('concurrent_broker_wrong_code_uid_ttl_and_nonprivate_allowlist_fail_one_redacted_line')
+        saved_allowlist=allowlist.with_suffix('.fixture-real')
+        allowlist.rename(saved_allowlist); allowlist.symlink_to(saved_allowlist)
+        assert 'root_owned_path_required' in broker(expected=1)
+        allowlist.unlink(); saved_allowlist.rename(allowlist)
+        checks.append('relative_destinations_and_symlinked_root_allowlists_refused_before_authority_or_publication')
         # Matching feature-gated fault binary; only this owned fixture copy is changed.
         production_bridge = root / 'production-bridge'; shutil.copy2(binary, production_bridge)
         replacement=binary.with_name('.fixture-bridge')
