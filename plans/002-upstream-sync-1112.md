@@ -1,6 +1,6 @@
 # Plan 002: upstream sync, 2026-11-12
 
-**Status:** Plan approved; implementation, builds, and mailbox qualification complete. Awaiting reviewer decision on 14 verified upstream test failures and final merge/push.
+**Status:** Final owner-seat review APPROVED; merge/push authorized. The 14 upstream-owned results remain listed as failures, not waived.
 
 **Goal:** Bring in the latest upstream Codex changes while preserving persistent agents, roles, and authenticated cross-account mailbox communication.
 
@@ -181,7 +181,7 @@ The comparison skips are unselected cases, not passes. Signature comparison chec
 | `codex-voice-host::bin/codex-voice-host` / `transport::tests::negotiates_after_early_packet_loss_and_slow_tcp_connect` | Remote-candidate assertion fails. | MATCH |
 | `codex-voice-host::bin/codex-voice-host` / `transport::tests::negotiates_real_ordered_channel_over_udp_and_tcp` | Remote-candidate assertion fails. | MATCH |
 
-**These 14 failures are freshly reproduced on current pinned upstream; none is a new, observed fork-only failure. They remain failures. No plan-001 exception or new waiver is assumed.** WORKFLOW.md requires passing touched-crate tests, and the approved plan requires final review before main changes. The reviewer must authorize an exception or approve an amended fix scope before merge/push can proceed.
+**These 14 failures are freshly reproduced on current pinned upstream; none is a new, observed fork-only failure. They remain failures. No plan-001 exception or new waiver is assumed.** WORKFLOW.md requires passing touched-crate tests, and the approved plan requires final review before main changes. The subsequent owner-seat approval below authorizes merge/push while retaining all 14 results as upstream failures, not waived results.
 
 ### Release build and mailbox qualification
 
@@ -236,4 +236,11 @@ $ git diff --exit-code 2551c9e970 -- codex-rs
 (no output; exit 0)
 ```
 
-Main remains `7d1a35a7b98ad50d7fdd9215f406b430914b11b9`; no main merge or push has occurred. Final review must cover the artifact manifest, the exact approved file scope, and the 14 verified upstream failures. The final `FORK 002 DONE <main sha>` marker is intentionally withheld until reviewer approval, --no-ff main merge, and origin/main push are complete.
+At final proof capture, main was `7d1a35a7b98ad50d7fdd9215f406b430914b11b9` and no main merge or push had occurred. The reviewer subsequently approved the reviewed artifacts, file scope, and merge as recorded below. The final `FORK 002 DONE <main sha>` marker follows successful --no-ff main merge and origin/main push.
+
+
+## Final owner-seat approval, 2026-11-12
+
+Owner seat: **APPROVED**, in the owner's place (rows `9b02c08b`, `a9921e09`). All 14 failures reproduce on pinned upstream `c0cc9fc820`; none is in the fork's factory code. They stay listed as failures in this plan, **not waived**. The owner seat explicitly directed merging `sync/upstream-1112` into main with `--no-ff` and pushing `origin main`.
+
+`dist/1112` is frozen at the reviewed bytes and metadata by explicit owner instruction. Its pre-approval manifest remains unchanged; this plan records the later approval. Before merge, origin/main still equals original main `7d1a35a7b98ad50d7fdd9215f406b430914b11b9`, runtime source still matches tested `2551c9e970`, and AGENTS.md/WORKFLOW.md remain unchanged. The only change after the reviewed head `c472499d3e` is this approval record and status update. No tests are reclassified as passed.
