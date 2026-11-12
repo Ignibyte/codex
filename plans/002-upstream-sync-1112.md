@@ -39,3 +39,69 @@ These exercise bridge serve, two authenticated endpoints, send/receive/ack, rece
 **Final gate:** Present the validated head, artifact manifest, and `git diff main...HEAD --stat` for review. Only after the reviewer's **APPROVED**, merge with `--no-ff` into main, push `origin main`, delete the sync branch per workflow, and print `FORK 002 DONE <main sha>`. Stop here for plan review first.
 
 Reviewer (Claude owner seat): APPROVED 2026-11-12 08:12 CST, in the owner's place (owner row 9b02c08b). One change: use CARGO_BUILD_JOBS=8 and --test-threads=8, not 2. z690 has 24 cores and the owner wants this soon; keep it to 8 so his workstation stays usable. Make sure step 5 of the brief (dist/1112/INTERFACE.md, the bridge calls, receipts and idempotency, addressing and wake, with file:line) is produced. Then go.
+
+
+## Proof result — stopped for owner decision, 2026-11-12
+
+Code head: `f74eee01268b40954afd6c133937a788187ab93e`, branch `sync/upstream-1112`; main remains `7d1a35a7b98ad50d7fdd9215f406b430914b11b9`. The two preview conflicts were the only conflicts. Retained the fork's outgoing legacy mailbox-ID translation followed by upstream's allocation-aware ID check; regenerated the experimental protocol export from merged sources. Cargo merged the lockfile without manual editing. Scope check found no unapproved paths; all 100 fork-only files from the original main remain byte-identical.
+
+```text
+$ CARGO_BUILD_JOBS=8 just write-app-server-schema --experimental
+Finished test profile in 57.25s
+schema_fixtures_tests::write_schema_fixtures_from_env ... ok
+1 passed; 0 failed (4.73s); exit 0
+$ CARGO_BUILD_JOBS=8 just write-app-server-schema
+Finished test profile in 11.15s
+schema_fixtures_tests::write_schema_fixtures_from_env ... ok
+1 passed; 0 failed (4.78s)
+SDK: 1 file reformatted; Done.; exit 0
+$ just test-github-scripts
+Ran 76 tests in 0.792s
+OK; exit 0
+$ git diff --check
+(no output; exit 0)
+$ git merge-base --is-ancestor c0cc9fc820f62e4dbdde68214dd6d792d6c8a7ee HEAD
+(no output; exit 0)
+$ git diff --exit-code 7d1a35a7b9 -- AGENTS.md WORKFLOW.md
+(no output; exit 0)
+```
+
+Workspace build/test used upstream Rust 1.95.0, `CARGO_BUILD_JOBS=8`, `INSTA_UPDATE=no`, and upstream's checksum-verified Codex V8 archive/binding pair from `scripts/codex_package/v8.py::resolve_codex_v8_cargo_env`. `TMPDIR` was already `/mnt/fast/tmp`. Release/fault target directories were prepared as aliases to the existing `/mnt/fast/target` cache; their release and dev-small profiles remain distinct. No release or fault build was started.
+
+```text
+$ CARGO_BUILD_JOBS=8 just test --workspace --test-threads=8
+Finished test profile in 9m 11s
+Starting 24701 tests across 329 binaries (54 tests skipped)
+Error: failed to copy executable fixture /mnt/fast/target/debug/codex to
+/tmp/<private fixture>/packages/standalone/releases/0.0.0-x86_64-unknown-linux-musl/bin/codex:
+cp: error writing ...: Disk quota exceeded
+Cancelling due to interrupt: 4 tests still running
+Summary [107.596s] 2025/24701 tests run:
+2012 passed (2 slow, 1 flaky), 13 failed, 54 skipped
+22676/24701 tests were not run due to interrupt
+exit 100; total elapsed 663.81s including compilation
+```
+
+All 13 final failures occurred while copying the CLI fixture into hardcoded `/tmp`, before their intended checks:
+
+```text
+codex-cli::app_server_daemon bootstrap_updater_is_ready_in_deep_codex_home
+codex-cli::app_server_daemon bootstrap_reports_updater_bind_failure
+codex-cli::app_server_daemon explicit_restart_applies_feature_overrides_and_preserves_saved_settings
+codex-cli::app_server_daemon managed_daemon_restarts_from_deleted_working_directory
+codex-cli::app_server_daemon managed_identity_survives_locale_and_timezone_changes
+codex-cli::app_server_daemon managed_starts_ensure_one_updater_and_recover_a_missing_one
+codex-cli::app_server_daemon manual_update_rejects_an_unowned_installation
+codex-cli::app_server_daemon package_ownership_check_does_not_start_an_updater
+codex-cli::app_server_daemon restart_applies_saved_updater_preference
+codex-cli::app_server_daemon managed_start_keeps_updater_on_marker_mismatch_but_stops_it_for_pin
+codex-cli::app_server_daemon unmanaged_app_server_does_not_launch_updater
+codex-cli::app_server_daemon managed_start_succeeds_when_updater_record_is_invalid
+codex-cli::app_server_daemon start_applies_feature_overrides_only_when_launching
+```
+
+The immediate source is `codex-rs/cli/tests/app_server_daemon/support.rs:25`, which uses `tempdir_in("/tmp")`; the helper at lines 53–54 cannot hard-link from the NVMe filesystem and falls back to copying. This is the same failure category recorded in plan 001, but no current-upstream comparison or waiver is claimed. Sent SIGINT only to this run's verified nextest PID and waited for its summary/exit. The approved plan carries no inherited exceptions; per WORKFLOW.md, stop here and ask the owner how to resolve the host quota blocker.
+
+`dist/1112/INTERFACE.md` is written from the merged source with file:line citations for transport, send/receive/ack/status/recovery, receipts, idempotency, addressing, and explicit session wake/reconciliation. Its source locations were checked. `docs/fork-mailbox.md` is drafted. No doc tests, release builds, mailbox qualifications, binary manifest/checksums, changelog completion entry, main merge, or push has been performed. None is claimed as passing.
+
+Additional review fact: the imported upstream delta contains trailing whitespace in two TUI snapshots (`offline_delete_after_wheel.snap:8` and `owned_startup_layout.snap:17`); both complete blobs match pinned upstream. The planned ordinary `git diff --check` passes. No snapshot bytes were changed and no exception was assumed.
