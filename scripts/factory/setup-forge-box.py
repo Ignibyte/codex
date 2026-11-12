@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Explicit operator steps for the existing bridge. Never starts a service."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,43 @@ ROLES = ('spec-manager', 'foreman-bot', 'pilot-seat')
 EDGES = {'spec-manager': ['foreman-bot'],
          'foreman-bot': ['spec-manager', 'pilot-seat'], 'pilot-seat': ['foreman-bot']}
 PROJECT = '12c0b4e6-82d1-4840-a643-d1dfdb4ccf68'
+
+
+class SandboxPreconditionError(RuntimeError):
+    pass
+
+
+def sandbox_preflight(bin_dir):
+    package = absolute(bin_dir).resolve().parent
+    bwrap = package / 'codex-resources/bwrap'
+    manifest = package / 'MANIFEST.json'
+    expected = 'unavailable'
+    try:
+        require(manifest.is_file() and not manifest.is_symlink()
+                and manifest.stat().st_size <= 2 * 1024 * 1024, 'package_manifest_missing_or_invalid')
+        expected = json.loads(manifest.read_text()).get('bwrapEmbeddedSha256', '')
+        require(isinstance(expected, str) and re.fullmatch('[0-9a-f]{64}', expected), 'manifest_bwrap_digest_missing')
+        require(bwrap.is_file() and not bwrap.is_symlink() and os.access(bwrap, os.X_OK), 'packaged_bwrap_missing')
+        with bwrap.open('rb') as f:
+            actual = hashlib.file_digest(f, 'sha256').hexdigest()
+        require(actual == expected, 'packaged_bwrap_digest_mismatch')
+        command = [str(bwrap), '--unshare-user', '--unshare-pid', '--unshare-net', '--die-with-parent',
+                   '--ro-bind', '/', '/', '--proc', '/proc', '--dev', '/dev', '--', '/usr/bin/true']
+        result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+        if result.returncode != 0:
+            reason = result.stderr.strip().splitlines()
+            raise RuntimeError(reason[0][:400] if reason else 'namespace probe exited ' + str(result.returncode))
+    except Exception as exc:
+        raise SandboxPreconditionError(
+            f'Sandbox precondition failed: {bwrap}\nSHA-256 from MANIFEST.json: {expected}\n'
+            f'Probe refused: {str(exc)[:400]}\n'
+            'Ops must install/approve this exact verified bwrap path and digest on this host '
+            '(root-owned file, required root-only xattr and AppArmor profile through ucs-ops on restricted Ubuntu). '
+            'Refusing endpoint setup. No AppArmor, sysctl or ownership change was attempted; '
+            'there is no danger-full-access fallback.'
+        ) from None
+    return dict(passed=True, bwrapPath=str(bwrap), bwrapSha256=expected, uid=os.geteuid(),
+                probe='read-only user/pid/network namespaces; /usr/bin/true', modelsStarted=0)
 
 
 def require(condition, code):
@@ -152,7 +190,8 @@ def initialize(a):
                              for r in ROLES})
     write(cfg / 'routes.pending.json', routes, 0o640)
     write(cfg / 'setup.json', m, 0o640)
-    return dict(initialized=True, seats=3, servicesStarted=0, routesEnabled=False)
+    return dict(initialized=True, seats=3, servicesStarted=0, routesEnabled=False,
+                endpointSandboxCheckRequired=True)
 
 
 def binding(path):
@@ -294,6 +333,8 @@ def main():
     init.add_argument('--ssh-port', type=int, default=22)
     init.add_argument('--ssh-user', default='ai')
     init.add_argument('--service-user', default='fleet-bridge')
+    probe = sub.add_parser('preflight', help='Check the packaged sandbox as the endpoint user; no model or policy changes')
+    probe.add_argument('--bin-dir', required=True)
     for cmd in ('keygen', 'bootstrap', 'routes', 'ssh-config'):
         q = sub.add_parser(cmd); q.add_argument('--config-root', required=True)
         if cmd == 'bootstrap': q.add_argument('--role', choices=ROLES, required=True)
@@ -303,18 +344,26 @@ def main():
         q = sub.add_parser(cmd); q.add_argument('--binding', required=True)
         if cmd == 'enroll': q.add_argument('--bootstrap', required=True)
         if cmd in ('send', 'resend'): q.add_argument('--bin-dir', required=True)
+        else: q.add_argument('--bin-dir', default=str(Path(__file__).resolve().parent / 'bin'))
         if cmd in ('send', 'status', 'forbidden'): q.add_argument('--recipient', required=True)
         if cmd in ('resend', 'receive', 'status'): q.add_argument('--message', required=True)
     a = p.parse_args()
-    if a.command == 'init': result = initialize(a)
+    if a.command == 'preflight': result = dict(sandbox=sandbox_preflight(a.bin_dir), servicesStarted=0)
+    elif a.command == 'init': result = initialize(a)
     elif a.command in ('keygen', 'bootstrap', 'routes', 'ssh-config'): result = operator(a)
-    else: result = endpoint(a)
+    else:
+        sandbox = sandbox_preflight(a.bin_dir)
+        result = endpoint(a)
+        result['sandbox'] = sandbox
     print(json.dumps(result, sort_keys=True))
 
 
 if __name__ == '__main__':
     try:
         main()
+    except SandboxPreconditionError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
     except Exception as exc:
         # Deliberately bounded diagnostics: no traceback, payload or secret echo.
         code = str(exc)

@@ -1,5 +1,7 @@
 # Fork changelog
 
+- 2026-11-12: Plan 002 adds manifest-pinned sandbox preflight and plain enrollment refusal for restricted Ubuntu, documents relocation/Ops preconditions, and prints bwrap digests in package READY lines without rebuilding 1112c.
+
 - 2026-11-12: Plan 002 adds the tested, separate-UID Forge/dev-3 operator runbook and setup helper to the whole package, with restricted SSH admission, explicit enrollment and a no-model restart/replay proof.
 
 - 2026-11-12: Plan 002 complete-package fix uses upstream's full Linux package layout plus the bridge, adds a mandatory package completeness gate, and requires packaged tool execution proof.

@@ -53,6 +53,8 @@ def main():
         assert r.returncode == expected, f'fixture_command_exit_{r.returncode}: {r.stderr[:180]}'
         return json.loads(r.stdout if expected == 0 else r.stderr) if json_output else r
     def setup(*args, uid=SERVICE, expected=0):
+        if args[0] in ('enroll', 'send', 'resend', 'receive', 'status', 'forbidden'):
+            args = (*args, '--bin-dir', str(a.dist / 'bin'))
         return command([sys.executable, '-B', script, *args], uid, expected)
     def service(args, uid=SERVICE):
         log = (root / ('process-' + uuid.uuid4().hex + '.log')).open('w')
@@ -68,6 +70,33 @@ def main():
         if proc.stdout: proc.stdout.close()
         if socket_path and socket_path.exists(): socket_path.unlink()
     try:
+        preflight = setup('preflight', '--bin-dir', a.dist / 'bin', uid=AGENT)
+        expected_digest = json.loads((a.dist / 'MANIFEST.json').read_text())['bwrapEmbeddedSha256']
+        assert preflight['sandbox']['passed'] and preflight['sandbox']['bwrapSha256'] == expected_digest
+        # A minimal relocated probe view exercises root-relative metadata/resource lookup.
+        relocated = root / 'relocated-probe'; relocated.mkdir()
+        (relocated / 'bin').mkdir(); (relocated / 'codex-resources').mkdir()
+        shutil.copyfile(a.dist / 'codex-resources/bwrap', relocated / 'codex-resources/bwrap')
+        (relocated / 'codex-resources/bwrap').chmod(0o555)
+        (relocated / 'MANIFEST.json').write_text(json.dumps({'bwrapEmbeddedSha256': expected_digest}))
+        moved = setup('preflight', '--bin-dir', relocated / 'bin', uid=AGENT)
+        assert moved['sandbox']['passed'] and moved['sandbox']['bwrapPath'].startswith(str(relocated))
+        # Simulate the reported kernel denial without changing any kernel policy.
+        denied = root / 'denied-probe'; denied.mkdir()
+        (denied / 'bin').mkdir(); (denied / 'codex-resources').mkdir()
+        denial = denied / 'codex-resources/bwrap'
+        denial.write_text('#!/bin/sh\necho "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted" >&2\nexit 1\n')
+        denial.chmod(0o555)
+        denied_digest = hashlib.sha256(denial.read_bytes()).hexdigest()
+        (denied / 'MANIFEST.json').write_text(json.dumps({'bwrapEmbeddedSha256': denied_digest}))
+        refused = command([sys.executable, '-B', script, 'enroll', '--bin-dir', denied / 'bin',
+                           '--binding', root / 'must-not-read.binding', '--bootstrap', root / 'must-not-read.bootstrap'],
+                          uid=AGENT, expected=1, json_output=False)
+        assert 'Sandbox precondition failed' in refused.stderr and 'RTM_NEWADDR' in refused.stderr
+        assert str(denial) in refused.stderr and denied_digest in refused.stderr and 'ucs-ops' in refused.stderr
+        assert not (root / 'must-not-read.binding').exists()
+        checks.append('sandbox_preflight_passes_as_endpoint_prints_manifest_digest_and_relocates')
+        checks.append('simulated_namespace_denial_refuses_before_enrollment_without_policy_changes_or_fallback')
         # Init does not launch a listener; SSH setup is performed by the fixture owner.
         with socket.socket() as s:
             s.bind(('127.0.0.1', 0)); port = s.getsockname()[1]

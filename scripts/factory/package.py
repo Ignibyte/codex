@@ -64,6 +64,12 @@ def operator_assets(directory):
         shutil.copy2(REPO / source, directory / name)
 
 
+def ready_line(directory, manifest):
+    files = manifest['files']
+    return (f"FORK HOSTS READY {directory} {files['bin/codex']['sha256'][:12]} "
+            f"{files['bin/codex-code-mode-host']['sha256'][:12]} BWRAP {manifest['bwrapEmbeddedSha256']}")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output', required=True, type=Path)
@@ -90,6 +96,8 @@ def main():
         shutil.copy2(REPO / 'docs/fork-mailbox.md', dest / 'INTERFACE.md')
         operator_assets(dest)
         seal(dest, manifest)
+        if manifest['qualification'].get('status') == 'passed':
+            print(ready_line(dest, manifest), flush=True)
         return
     if dest.exists():
         raise RuntimeError('Refusing to replace any existing dist folder')
@@ -103,15 +111,18 @@ def main():
         raise RuntimeError('Selected runtime source differs from the current Rust tree')
     run(['git', 'diff', '--exit-code', 'HEAD', '--', 'codex-rs'])
     env = os.environ.copy()
-    env.update(CODEX_FACTORY_REVISION=source, STABLE_GIT_COMMIT=source, CARGO_BUILD_JOBS='8')
+    env.update(CARGO_BUILD_JOBS='8')
     env.update(resolve_codex_v8_cargo_env(TARGET_SPECS[a.target]))
     target_dir = a.target_dir.resolve(); native = target_dir / a.target / 'release'
     cargo_base = ['cargo', 'build', '--locked', '--release', '--target', a.target, '--target-dir', target_dir]
     # This order follows upstream's Linux Cargo release action. Never strip bwrap after hashing.
-    run([*cargo_base, '-p', 'codex-bwrap', '--bin', 'bwrap'], cwd=REPO / 'codex-rs', env=env)
+    # Keep bundle/job revision stamps out of bwrap; preserve cache reuse for the same component source.
+    bwrap_env = {k: v for k, v in env.items() if k not in ('CODEX_FACTORY_REVISION', 'STABLE_GIT_COMMIT', 'CODEX_BWRAP_SHA256')}
+    run([*cargo_base, '-p', 'codex-bwrap', '--bin', 'bwrap'], cwd=REPO / 'codex-rs', env=bwrap_env)
     bwrap = work / 'bwrap'; shutil.copy2(native / 'bwrap', bwrap)
     run(['strip', '--strip-debug', '--strip-unneeded', bwrap])
     env['CODEX_BWRAP_SHA256'] = digest(bwrap)
+    env.update(CODEX_FACTORY_REVISION=source, STABLE_GIT_COMMIT=source)
     metadata = json.loads(output(['cargo', 'metadata', '--locked', '--no-deps', '--format-version', '1'], cwd=REPO / 'codex-rs', env=env))
     owners = {t['name']: pkg['name'] for pkg in metadata['packages'] for t in pkg['targets'] if 'bin' in t['kind']}
     binaries = [*contract['binaries'], 'codex-factory-bridge']

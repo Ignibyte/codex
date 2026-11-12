@@ -91,6 +91,61 @@ install -d -o ai -g ai -m 0700 "$CFG/credentials" /home/ai/.local/state/fleet-br
 `install -d -o ai -g ai -m 0700 "$STATE/native/pilot-seat"`.
 No user or service is created by setup-forge-box.py.
 
+### Sandbox precondition — every Ubuntu endpoint host
+
+Before staging/enrolling endpoint jobs, **ai on each host**, in the same execution
+context used for its Codex jobs, must run:
+
+```sh
+# Forge and dev-3 — ai, after Ops installs the whole package
+python3 "$PKG/setup-forge-box.py" preflight --bin-dir "$BIN"
+```
+
+The script reads `bwrapEmbeddedSha256` from `$PKG/MANIFEST.json`, verifies the
+actual file, and prints its installed path and full digest. For 1112c the file is
+`$PKG/codex-resources/bwrap`, SHA-256
+`bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023`.
+It runs `/usr/bin/true` through that exact bwrap with a read-only root and new
+user, PID and network namespaces. This is a no-model test; the network namespace
+also exercises the loopback initialization that failed on Forge. Enrollment and
+the endpoint proof commands repeat the check as their endpoint UID and refuse
+before credential/network actions when it fails. Service-only staging runs as
+fleet-bridge and does not stand in for ai's sandbox permission.
+
+On Ubuntu with `kernel.apparmor_restrict_unprivileged_userns=1`, **Ops must first
+provide a root-owned bwrap, its required root-only xattr and an AppArmor profile
+for this fork's exact installed path/file**, through ucs-ops (the codex-cli role).
+Stock's permission does not cover a separate fork file. The owner measured
+`bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted` on Forge before
+that Ops change; stock and danger-full-access success did not qualify the fork's
+read-only/workspace-write sandbox there. z690 does not reproduce that host policy.
+
+If the probe fails, stop and send Ops the script's path/digest/error. The helper
+never edits AppArmor, sysctl, xattrs or ownership and never falls back to
+danger-full-access. Do not globally disable the restriction as a setup step.
+After Ops fixes it, ai reruns this probe and the owner reruns the packaged
+read-only/workspace-write turns on the actual hosts. No binary rebuild is needed.
+
+### Relocation and digest pins
+
+`/opt/fleet-codex/1112c` is this runbook's example input, not a compiled package
+location. The package uses relative bin/resource/path metadata; the bridge takes
+explicit state/socket/config paths; preflight derives bwrap and MANIFEST.json
+from the supplied absolute bin directory. Nothing in the runtime/setup requires
+`/home/ai/.local/share/fleet-codex`. The ai CODEX_HOME examples below are deliberate
+operator choices. The generated application-journal defaults under
+`/home/ai/fleet-spec-project` are client configuration and must match the actual
+driver journals. Generated bindings, service units, proxy config and forced
+SSH/sudoers commands contain the chosen absolute paths: regenerate/update those
+operator files, and Ops' path/xattr/profile permission, if the installation moves.
+
+The packager keeps revision stamps out of the bwrap component build, reuses Cargo
+artifacts where possible, strips a staging copy before hashing, and never strips
+the packaged copy afterward. Same-source cached builds can retain the digest;
+clean builds with different source/toolchains/build paths are not claimed to be
+bit reproducible. Every later package READY line prints the full manifest bwrap
+digest. Any new bwrap path or digest needs an Ops policy update before use.
+
 ## 2. Stage the hub and the remote transport
 
 First record `id -u ai` on both hosts and `id -u fleet-bridge` on both hosts
@@ -459,6 +514,10 @@ namespace overlays backed by one isolated NVMe directory; no host config or
 system account is changed. No model is started. Production systemd units,
 production ai sudoers admission, host routing/firewall/SSH pins and two actual
 kernels remain **unproven on Forge/dev-3** until Ops installs and runs section 4.
+The updated fixture also checks real endpoint-UID sandbox preflight, relocated
+metadata/resource lookup, and a simulated RTM_NEWADDR denial that prevents
+enrollment without modifying policy. This refusal test does not claim to enable
+or reproduce Ubuntu's actual AppArmor policy on z690.
 
 Executed on z690 against the packaged helper and production bridge:
 

@@ -25,6 +25,8 @@ Run the fork with a dedicated `CODEX_HOME`, including the future Forge spec agen
 
 For the owner-operated two-host setup, read the package's `SETUP.md` (tracked source: `docs/factory-setup.md`). Ops provisions a separate fleet-bridge UID on Forge and dev-3 and installs the whole package under `/opt/fleet-codex/1112c`; ai continues to own endpoint jobs, credentials and native ledgers. The setup helper never starts services. Its local SSH fixture proves the setup protocol with separate UIDs, while real-host installation and a live native cutover remain owner actions.
 
+Each Ubuntu endpoint also needs Ops' AppArmor/user-namespace permission for the fork's actual packaged bwrap path and digest; stock's permission does not carry over. Run `python3 <package>/setup-forge-box.py preflight --bin-dir <package>/bin` as the endpoint user before setup. Enrollment repeats this no-model namespace check and refuses on failure. The helper prints the path and manifest digest and never changes policy/ownership or substitutes full-access execution. The package stays relocatable; regenerate absolute operator bindings/units/SSH configuration and Ops' path permission when moving it. Every later package READY line includes the full bwrap digest.
+
 
 # Source-cited mailbox interface
 
