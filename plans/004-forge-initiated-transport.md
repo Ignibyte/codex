@@ -241,3 +241,42 @@ The development T proof passes 20 groups against the current production/fault br
 The public socket is atomically renamed into place only after its inode/device/process ownership record is durable. Crashes before publication cannot leave an unproven public socket; live or unknown sockets are never deleted to make startup pass. Legacy connect-host/remote-entry remains solely for compatibility fixtures; the shipped setup requires Forge-initiated transport.
 
 Full release/package proof and final hashes follow below. The 14 recorded upstream-owned workspace failures remain failures in plan 002, not waived. No unrelated workspace test rerun, S code, automatic watcher, encryption, final-account parameterisation, stock provenance guard, merge or plan 003 work is claimed.
+
+## T complete package proof result — 2026-11-12
+
+All planned proofs PASS on code/documentation head `1d6f7dcaf2ec668119c748c6dd884a5d946dd704`. Runtime/voice source `c2f29c9f13bdd414736fc986284cb49672829c58`; Rust tree `d30e9c2479d2af6fc9967c1266419a3789794de3` equals HEAD. Main/origin main remain `32f47da69f46569d01d91ad2c412366f0c64bf07`.
+
+```text
+$ RUSTUP_TOOLCHAIN=1.95.0 CARGO_BUILD_JOBS=8 CARGO_TARGET_DIR=/mnt/fast/target TMPDIR=$TASK/tmp python3 scripts/factory/package.py --output dist/1112f --work-dir $TASK/package
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.26s
+    Finished `release` profile [optimized + debuginfo] target(s) in 16m 27s
+INFO: Elapsed time: 153.004s (upstream Bazel voice release recipe)
+Complete package created: /srv/stacks/codex/dist/1112f
+$ RUSTUP_TOOLCHAIN=1.95.0 CARGO_BUILD_JOBS=8 CARGO_TARGET_DIR=/mnt/fast/target TMPDIR=$TASK/tmp python3 scripts/factory/qualify_forge_transport.py --package dist/1112f --work-dir $TASK/full-proof --full-package-proof
+    Finished `dev-small` profile [unoptimized] target(s) in 2m 23s
+{"status":"passed","mailboxLanes":7,"renewals":true,"setup":true,"packagedTools":true,"forgeInitiatedTransport":true,"transportChecks":20,"externalModelRequests":0,"externalFleetHostContacts":0,"bwrapSha256":"0ce4fa5b9da214841641f12032afa6cda3d93b45f321705fa8bde5fb2c270b74"}
+```
+
+| Proof | Result | Seconds |
+| --- | --- | ---: |
+| R renewals / isolated systemd timer | 21 PASS | 20.26 |
+| Legacy setup / actual loopback SSH | 3 seats, 4 edges PASS | 4.37 |
+| Packaged shell / workspace write / MCP | 3 PASS | 2.12 |
+| Forge-initiated T / isolated OpenSSH, PAM and systemd | 20 PASS | 31.2 |
+| contract | 64 PASS | 0.21 |
+| credentials | 7 PASS | 5.22 |
+| recovery | 9 PASS | 17.29 |
+| native | 5 PASS | 2.12 |
+| lifecycle | 4 PASS | 1.67 |
+| durability | 7 PASS | 1.52 |
+| reconciliation | 5 lanes PASS | 10.38 |
+
+Each tool turn used the required packaged code-mode host, performed its verified actual shell/write/MCP effect and returned that output to the local Responses fixture (two local model requests per case). No owner login/config/cache was read; external model requests and fleet-host contacts are zero. This is offline qualification, not a claim of production Forge MCP/model/backend operation.
+
+T runs the exact generated hub/source units and pilot R unit. The service password is locked and the actual PAM account/session path remains enabled; there is no fleet-bridge sudo rule. Root key lookup/from-filter, shell/PTY/forward refusals, one ids-only refusal syslog line, actual Unix peer UID and all 20 groups above pass with the release bridge. Its matching fault pair is feature-gated; production binaries contain no fixture faults. The complete R suite also passes its 21 timer/publication/lease/crash/UID/revoke/boot checks with this source and new bwrap digest.
+
+Package completeness passes the derived Linux contract and matching official 45-path shipped union, including the same-source voice runtime/helper and root launcher. 55 payload inventory entries plus MANIFEST.json produce 56 checksum lines. Version and factory-info both report 0.167.2+ignibyte.1112f; publicUpdatesAllowed=false. All 55 qualified payload hashes must stay unchanged through the qualification seal. The qualification packageManifestSha256 binds the pre-seal input manifest; final manifest/checksum hashes are printed separately in the READY answer.
+
+The 14 upstream-owned workspace failures remain listed as failures in plan 002 and in this manifest, not waived. Received 1112e (54 checksums) and 1112d (52 checksums) were independently rechecked unchanged. No S code, stock start/attach guard, final-account parameterisation, encryption/wait controller, plan 003 work, merge or host deployment occurred.
+
+Ops still reviews and installs the whole package through ucs-ops, approves the new bwrap digest/install path in sandbox policy, runs the four-line launcher check and endpoint preflight/tool proof on both actual hosts, then runs the notices-only pilot. Throwaway ai pilot roots must be removed after drain and never reused for S final initialization. The isolated NVMe task root is removed after sealing; shared Cargo/V8 caches, host /tmp and received packages are preserved.
