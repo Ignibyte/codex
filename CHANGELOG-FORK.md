@@ -1,5 +1,7 @@
 # Fork changelog
 
+- 2026-11-12: Plan 004 T adds the qualified Forge-initiated standing SSH transport, root-owned protocol launcher/policy generation and throwaway pilot runbook in whole package 1112f, version 0.167.2+ignibyte.1112f.
+
 - 2026-11-12: Plan 004 records conditional S approval, per-endpoint account/enrollment constraints and notices-only use before S; received 1112e remains unchanged.
 
 - 2026-11-12: Plan 004 R adds deferred remote admission, same-key host renewals and crash-resumable seat credential publication through a root-owned allowlist/timer in complete package 1112e.
