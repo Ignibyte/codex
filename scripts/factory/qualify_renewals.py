@@ -408,7 +408,7 @@ def container_fixture(a):
     (wants/'renewal-proof.service').symlink_to('../renewal-proof.service')
     (a.work_dir/'container-tmp').mkdir(mode=0o1777); (a.work_dir/'container-tmp').chmod(0o1777)
     log=(a.work_dir/'systemd.log').open('w')
-    p=subprocess.Popen(['systemd-nspawn','--quiet','--register=no','--settings=no','--resolv-conf=off','--private-network',
+    p=subprocess.Popen(['systemd-nspawn','--quiet','--register=no','--keep-unit','--settings=no','--resolv-conf=off','--private-network',
             '--capability=CAP_SYS_ADMIN',
             '--directory='+str(root),'--bind-ro=/usr','--bind-ro='+str(REPO)+':/repo',
             '--bind='+str(a.work_dir)+':/work','--bind='+str(a.work_dir/'container-tmp')+':/tmp',
