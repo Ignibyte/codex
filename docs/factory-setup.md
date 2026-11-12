@@ -43,9 +43,15 @@ BIN=$PKG/bin
 STATE=/var/lib/fleet-manager-bridge-pilot
 CFG=/etc/fleet-manager-bridge-pilot
 STAGE=/var/lib/fleet-codex-pilot-stage
-# dev-3 — operator shell; identical PKG and BIN
+```
+
+```sh
+# dev-3 — operator shell
+PKG=/opt/fleet-codex/c2f29c9f13bdd414736fc986284cb49672829c58-1112f
+BIN=$PKG/bin
 STATE=/var/lib/fleet-manager-bridge-remote-pilot
 CFG=/etc/fleet-manager-bridge-remote-pilot
+STAGE=/var/lib/fleet-codex-pilot-stage
 ```
 
 The final package path is printed in the READY answer. SOURCE is the absolute received **whole package folder**. On each host Ops installs it once, then provisions only that host's fresh pilot roots:
@@ -63,8 +69,14 @@ install -d -o fleet-bridge -g fleet-bridge-clients -m 2710 "$STATE" "$STATE/run"
 install -d -o fleet-bridge -g fleet-bridge-clients -m 2750 "$CFG"
 install -d -o fleet-bridge -g fleet-bridge-clients -m 0710 "$STATE/native"
 install -d -o ai -g ai -m 0700 "$CFG/credentials"
+```
+
+```sh
 # Forge — Ops/root
 install -d -o ai -g ai -m 0700 "$STATE/native/spec-manager" "$STATE/native/foreman-bot"
+```
+
+```sh
 # dev-3 — Ops/root
 install -d -o ai -g ai -m 0700 "$STATE/native/pilot-seat"
 ```
@@ -246,6 +258,9 @@ install -o root -g root -m 0755 "$STAGE/fleet-bridge-pilot-login" /etc/ssh/fleet
 install -o root -g root -m 0755 "$STAGE/fleet-bridge-pilot-launcher" /etc/ssh/fleet-bridge-pilot-launcher
 # Ops' PR connects this Match fragment to sshd's include chain and installs
 # the account dispatcher/locked-password/no-sudo policy, then validates/reloads sshd.
+```
+
+```sh
 # Forge — Ops/root
 install -o fleet-bridge -g fleet-bridge-clients -m 0600 "$STAGE/source.json" "$CFG/transport/source.json"
 install -o fleet-bridge -g fleet-bridge-clients -m 0600 "$STAGE/source_known_hosts" "$CFG/transport/source_known_hosts"
@@ -268,6 +283,9 @@ For ROLE=spec-manager and ROLE=foreman-bot, respectively:
 BOOTSTRAP=$(sudo -u fleet-bridge -- python3 "$PKG/setup-forge-box.py" bootstrap \
   --config-root /etc/fleet-manager-bridge-pilot --role "$ROLE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["bootstrapFile"])')
 install -o ai -g ai -m 0600 "$BOOTSTRAP" "/etc/fleet-manager-bridge-pilot/credentials/$ROLE.bootstrap"
+```
+
+```sh
 # Forge — ai, successful sandbox preflight and fresh groups
 python3 "$PKG/setup-forge-box.py" enroll --bin-dir "$BIN" \
   --binding "/etc/fleet-manager-bridge-pilot/$ROLE.binding.json" \
@@ -306,6 +324,9 @@ Rotation operation IDs, private candidate journal, fsync/atomic rename, current-
 ```sh
 # Forge — fleet-bridge; explicit pilot admission, preserving reserved IDs
 python3 "$PKG/setup-forge-box.py" admit-remote --config-root /etc/fleet-manager-bridge-pilot
+```
+
+```sh
 # Forge — Ops/root, after dev-3 generation and publisher are installed/verified
 systemctl daemon-reload
 systemctl enable --now fleet-manager-bridge-pilot-source.service
@@ -332,6 +353,9 @@ Forge fleet-bridge now obtains pilot-seat's bootstrap using bootstrap --config-r
 python3 "$PKG/setup-forge-box.py" enroll --bin-dir "$BIN" \
   --binding /etc/fleet-manager-bridge-remote-pilot/pilot-seat.binding.json \
   --bootstrap /etc/fleet-manager-bridge-remote-pilot/credentials/pilot-seat.bootstrap
+```
+
+```sh
 # Forge — Ops/root; after actual publisher delivery is proved
 systemctl enable --now fleet-manager-bridge-pilot-renew.timer
 ```
@@ -388,6 +412,9 @@ for DIR in /var/lib/fleet-manager-bridge-pilot-renew /var/lib/fleet-codex-pilot-
   test "$(stat -c %u "$DIR")" = 0 || exit 1
 done
 rm -rf --one-file-system -- /var/lib/fleet-manager-bridge-pilot-renew /var/lib/fleet-codex-pilot-stage
+```
+
+```sh
 # dev-3 — Ops/root; matching source entry and endpoint confirmed stopped
 for DIR in /var/lib/fleet-manager-bridge-remote-pilot /etc/fleet-manager-bridge-remote-pilot; do
   test ! -L "$DIR" && test -d "$DIR" || exit 1
