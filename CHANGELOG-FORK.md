@@ -1,5 +1,7 @@
 # Fork changelog
 
+- 2026-11-12: Plan 002 adds the tested, separate-UID Forge/dev-3 operator runbook and setup helper to the whole package, with restricted SSH admission, explicit enrollment and a no-model restart/replay proof.
+
 - 2026-11-12: Plan 002 complete-package fix uses upstream's full Linux package layout plus the bridge, adds a mandatory package completeness gate, and requires packaged tool execution proof.
 
 - 2026-11-12: Plan 002 release follow-up stamps `0.167.2+ignibyte.1112b` for current model discovery, prepares the separate `dist/1112b` release, and documents an isolated fork `CODEX_HOME`.

@@ -57,6 +57,13 @@ def seal(directory, manifest):
     (directory / 'SHA256SUMS').write_text(''.join(digest(p) + '  ' + str(p.relative_to(directory)) + '\n' for p in paths))
 
 
+def operator_assets(directory):
+    for source, name in [('scripts/factory/setup-forge-box.py', 'setup-forge-box.py'),
+                         ('scripts/factory/test-setup-forge-box.py', 'test-setup-forge-box.py'),
+                         ('docs/factory-setup.md', 'SETUP.md')]:
+        shutil.copy2(REPO / source, directory / name)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output', required=True, type=Path)
@@ -81,6 +88,7 @@ def main():
         manifest['packagingScriptsSha256'] = {str(path.relative_to(REPO)): digest(path)
                                             for path in (Path(__file__).resolve(), REPO / 'scripts/factory/check_package.py')}
         shutil.copy2(REPO / 'docs/fork-mailbox.md', dest / 'INTERFACE.md')
+        operator_assets(dest)
         seal(dest, manifest)
         return
     if dest.exists():
@@ -123,6 +131,7 @@ def main():
         if not (stage / 'bin' / binary).exists():
             shutil.copy2(native / binary, stage / 'bin' / binary)
     shutil.copy2(REPO / 'docs/fork-mailbox.md', stage / 'INTERFACE.md')
+    operator_assets(stage)
     result = check(stage, a.target)
     print(json.dumps(result, indent=2), flush=True)
     if not result['passed']:

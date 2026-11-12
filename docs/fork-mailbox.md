@@ -23,6 +23,8 @@ Create every future release through `python3 scripts/factory/package.py --output
 
 Run the fork with a dedicated `CODEX_HOME`, including the future Forge spec agent. For example, set `CODEX_HOME=/home/ai/.local/share/fleet-codex/home` in its launcher/service and create that directory with mode 0700. Use the normal Codex login flow for this home. Keep stock's default `~/.codex` separate: the real version fixes catalog eligibility, but sharing a home still shares model caches, config, credentials, and session state. Never put credential contents in a runbook, manifest, or log.
 
+For the owner-operated two-host setup, read the package's `SETUP.md` (tracked source: `docs/factory-setup.md`). Ops provisions a separate fleet-bridge UID on Forge and dev-3 and installs the whole package under `/opt/fleet-codex/1112c`; ai continues to own endpoint jobs, credentials and native ledgers. The setup helper never starts services. Its local SSH fixture proves the setup protocol with separate UIDs, while real-host installation and a live native cutover remain owner actions.
+
 
 # Source-cited mailbox interface
 
