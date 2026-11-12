@@ -1,6 +1,6 @@
 # Plan 002: upstream sync, 2026-11-12
 
-**Status:** Final owner-seat review APPROVED; merge/push authorized. The 14 upstream-owned results remain listed as failures, not waived.
+**Status:** Upstream sync merged and pushed as `163ad7adcf2145656c8d0bb13191731993f7047c`. The release-version follow-up below awaits its own final owner approval. The 14 upstream-owned results remain listed as failures, not waived.
 
 **Goal:** Bring in the latest upstream Codex changes while preserving persistent agents, roles, and authenticated cross-account mailbox communication.
 
@@ -258,3 +258,64 @@ Owner seat: **APPROVED**, in the owner's place (rows `9b02c08b`, `a9921e09`). Al
 For the live proof, use the available normal z690 ChatGPT credential record through a private, mode-0700 `CODEX_HOME`; never print or alter the owner's credentials/config/cache. Run one tiny `codex exec --sandbox read-only --skip-git-repo-check -c 'model="gpt-6.1-terra"' -c 'model_reasoning_effort="high"'` turn from a disposable directory, asking for a fixed reply and no tools. Record completion and the fetched numeric cache version/model availability without credential or account output. If the login is unusable, report the exact limitation for the owner's Forge proof. Document a dedicated fork `CODEX_HOME` for plan 003 so stock and fork caches/settings/sessions are separate.
 
 **Final gate:** Record actual results and the tested source commit here; present the artifact path and branch for review, then print `FORK VERSION FIX READY /srv/stacks/codex/dist/1112b`. Merge only after a new owner **APPROVED**. Read the setup brief in full after the version fix, before resuming plan 003.
+
+### Release-version proof result
+
+Tested source: **`6cb7fd718329da87bfd1dcf4c10536cf82b1c367`**. Both builds used eight jobs, Rust/Cargo 1.95.0, the same checksum-verified V8 archive/bindings and GNU target as the original sync. `cargo update --workspace --offline` stamped 175 workspace packages; a parsed comparison confirmed all external package records are unchanged. The highest stable remote `rust-v*` tag is `rust-v0.167.2`; newer 0.168/0.169 tags are prereleases. Build metadata remains visible in the CLI, and the live backend accepts it.
+
+```text
+$ cargo build --locked --release --target x86_64-unknown-linux-gnu --target-dir target/1112b-release -p codex-cli -p codex-factory --features codex-install-context/factory --bin codex --bin codex-factory-bridge
+Finished release profile [optimized + debuginfo] in 13m 18s
+exit 0; 798.28s
+$ # Matching fault build: --profile dev-small, target/1112b-faults,
+$ # features codex-install-context/factory,codex-app-server/factory-fixture-faults,codex-factory/fixture-faults; CARGO_INCREMENTAL=0
+Finished dev-small profile [unoptimized] in 2m 28s
+exit 0; 148.39s
+$ dist/1112b/codex --version
+codex-cli 0.167.2+ignibyte.1112b
+$ dist/1112b/codex-factory-bridge --version
+codex-factory 0.167.2+ignibyte.1112b
+```
+
+Factory-info reports `ignibyte-codex-factory`, revision `6cb7fd718329da87bfd1dcf4c10536cf82b1c367`, version `0.167.2+ignibyte.1112b`, and `publicUpdatesAllowed=false`. The new manifest records actual ELF dependencies, source/tree identities, versions, hashes, qualification and live-proof results. Both binaries still require GLIBC_2.39 and OPENSSL_3.0.0; the CLI also requires libbz2.so.1.0. No installation or remote-host proof is claimed.
+
+All seven existing qualifier commands were rerun as specified above, with production paths replaced by `dist/1112b` and fault paths by `target/1112b-faults/x86_64-unknown-linux-gnu/dev-small`. A private mount namespace bound `/srv/stacks/codex-version-tmp-1112b/mount-tmp` at its own `/tmp`, with TMPDIR=/tmp and isolated HOME/XDG/Git settings. Fixture UIDs remained separated. Results:
+
+| Qualifier | Variant | Output / exit / elapsed |
+| --- | --- | --- |
+| contract | production | passed=true; 64 checks; 0; 0.21s |
+| credentials | production | passed=true; 7 checks; 0; 5.96s |
+| recovery | production | passed=true; 9 checks; 0; 20.30s |
+| native | production | passed=true; 5 checks; 0; 2.15s |
+| lifecycle | production | passed=true; 4 checks; 0; 2.24s |
+| durability | fault-injection | passed=true; 7 checks; 0; 1.69s |
+| reconciliation | fault-injection | passed=true; 5 crash lanes; 0; 10.62s |
+
+All 96 counted checks and all five reconciliation lanes pass. Per the owner's explicit instruction, no full workspace/doc/GitHub suite rerun was performed for this version-only follow-up. The original 14 upstream-owned workspace failures remain **failures**, not waived.
+
+The z690 live proof used the available normal ChatGPT credential record through a private mode-0700 CODEX_HOME and mode-0600 credential copy, with no owner config copied. The command used `CODEX_HOME=<private home>` and:
+
+```sh
+/srv/stacks/codex/dist/1112b/codex exec --sandbox read-only --skip-git-repo-check --ephemeral --ignore-user-config --json -c 'model="gpt-6.1-terra"' -c 'model_reasoning_effort="high"' -c 'cli_auth_credentials_store="file"' 'Reply with exactly FORK_VERSION_OK. Do not use any tools or access any files.'
+```
+
+Output: `turn.completed`; final reply `FORK_VERSION_OK`; **exit 0; 3.77s; zero tool calls**. The fetched private cache has `client_version="0.167.2"` and contains both `gpt-6.1-terra` and `gpt-6.1-sol`. Before/after hashes of the owner's auth.json, config.toml and models_cache.json are unchanged. One nonfatal diagnostic reported that `codex-code-mode-host` is absent from the requested two-binary package; the read-only model turn completed successfully. This proof does not qualify code-mode tool execution. Carry that packaging fact into subsequent setup/spec planning; no extra helper or runtime change is included here.
+
+SHA-256: `codex` = `96cde4cac686d8f297fa6ebdc43fc2610a1a535ed1f63497d94e2a09e8da62e1`; `codex-factory-bridge` = `04eb9ac93dd83a9b51a1e414bd50db53d56cd7050ff2cdfb4624f2cff17ecc64`.
+
+```text
+$ cd dist/1112b && sha256sum -c SHA256SUMS
+codex: OK
+codex-factory-bridge: OK
+INTERFACE.md: OK
+MANIFEST.json: OK
+exit 0
+$ git diff --exit-code 6cb7fd7183 -- codex-rs
+(no output; exit 0)
+$ git diff --check
+(no output; exit 0)
+```
+
+Frozen `dist/1112` verification PASS: all five file hashes, sizes, modes and modification times are unchanged. The follow-up diff names only its five allowed tracked files. Documentation updates do not change the tested Rust tree. No main merge or push of this follow-up has occurred; final owner **APPROVED** remains required.
+
+Cleanup PASS: removed `/srv/stacks/codex-version-tmp-1112b`, including its private credential copy and fixture output, after recording results. Zero task namespace processes remained. Deleted nothing outside that directory; the host `/tmp` remains its original tmpfs.
