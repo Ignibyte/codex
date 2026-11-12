@@ -16,3 +16,7 @@ sha256sum -c SHA256SUMS
 ```
 
 Qualification results and any blocking failures are recorded in `plans/002-upstream-sync-1112.md`. Final main merge and push require the reviewer's approval after validation.
+
+The release-version follow-up is packaged separately in `dist/1112b/`; `dist/1112/` stays frozen. Its workspace version is `0.167.2+ignibyte.1112b`: the base follows upstream's stable release tag, while build metadata identifies the fork. Model discovery and its cache use the numeric `0.167.2` version. For future builds, stamp `[workspace.package].version` before building and regenerate the lockfile with `cargo update --workspace`; a development `0.0.0` build can receive an older model catalog. Check both `--version` and the manifest's full source revision before installation.
+
+Run the fork with a dedicated `CODEX_HOME`, including the future Forge spec agent. For example, set `CODEX_HOME=/home/ai/.local/share/fleet-codex/home` in its launcher/service and create that directory with mode 0700. Use the normal Codex login flow for this home. Keep stock's default `~/.codex` separate: the real version fixes catalog eligibility, but sharing a home still shares model caches, config, credentials, and session state. Never put credential contents in a runbook, manifest, or log.
