@@ -196,6 +196,10 @@ prompt to close. The original RPC completes independently, with
 cannot roll back completed effects. It remains effective while a proof waits for
 outbound queue capacity, but cannot retract a response already enqueued.
 
+`biometricType` reports the native method used for that successful signature when known.
+It is `"fingerprint"` for a successful Touch ID protected signing operation and `null`
+when unknown. Older servers omit it. It is context, not an additional signed proof field.
+
 Canceling or resolving an elicitation does not itself stop a separate
 `userVerification/verify` RPC. Clients must cancel that RPC separately and discard
 late proofs after the approval is canceled or resolved. Only one native worker
@@ -283,7 +287,7 @@ ChatGPT account identity.
 | `userVerification/status` | `{}`                              | `{credentialId, unavailableReason, unavailableMessage}` |
 | `userVerification/enroll` | `{}`                              | `{credentialId, algorithm?, publicKey?}`                |
 | `userVerification/delete` | `{}`                              | `{}`                                                    |
-| `userVerification/verify` | `{challenge, title, description}` | `{proof: {credentialId, signature}}`                    |
+| `userVerification/verify` | `{challenge, title, description}` | `{proof: {credentialId, signature}, biometricType}`     |
 | `userVerification/cancel` | `{requestId}`                     | `{}`                                                    |
 
 Status reads local readiness without prompting or contacting a backend. A null
@@ -515,6 +519,12 @@ Read the selection from `threadSettings.disabledPluginIds` in
 `thread/start`, `thread/resume`, and `thread/fork` responses. Selections persist
 across resume. Forks restore the selection from the history retained at the
 requested fork boundary.
+
+# Environment settings
+
+`turn/settings/update` can replace the environments used by later steps of the running turn; an already-started step and future turns are unchanged. `thread/settings/update` changes the selection for future turns without affecting the running turn. Both accept the same `environments` list as `turn/start`: omission or `null` keeps the selection, and `[]` clears it. A thread settings request that provides `cwd` without an explicit environment list selects the default environments for that directory. Selected environments inherit the thread's configuration.
+
+`thread/settings/update` returns success after Core accepts the update, including an unchanged selection. Rejections are returned as request errors. `thread/settings/updated` reports effective changes, including the ordered `environments` selection, and is not a per-request acknowledgment. Updating both scopes requires two separate requests; they are not atomic.
 
 # Deprecated thread personality setting
 

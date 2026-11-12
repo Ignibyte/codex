@@ -3,6 +3,9 @@
 #[path = "scenarios_turn_input_agent_message.rs"]
 mod turn_input_agent_message;
 
+#[path = "scenarios_multi_environment_mcp.rs"]
+mod multi_environment_mcp;
+
 use super::image_rollout::RecordingFileAttachmentStore;
 use super::permissions_messages::PermissionPathScenario;
 use codex_attachment_store::AttachmentStoreErrorKind;
@@ -510,13 +513,11 @@ async fn gif_generation_preserves_animation_and_replays_a_still_preview() -> Res
 async fn admitted_prompt_id_reaches_responses() -> Result<()> {
     skip_if_no_network!(Ok(()));
     let server = start_mock_server().await;
-    let test = test_codex()
-        .with_config(|config| {
-            configure_scenario_catalog(config);
-            config.include_environment_context = false;
-        })
-        .build_with_auto_env(&server)
-        .await?;
+    let mut builder = test_codex().with_config(|config| {
+        configure_scenario_catalog(config);
+        config.include_environment_context = false;
+    });
+    let test = builder.build_with_auto_env(&server).await?;
     let mock = mount_sse_sequence(
         &server,
         vec![
@@ -869,6 +870,30 @@ async fn unavailable_images_are_rechecked_without_rewriting_history() -> Result<
     insta::assert_snapshot!(context_snapshot::format_request_history_snapshot(
         "Available file references pass through. A later request replaces missing files, preserves references on backend errors, rechecks each distinct ID once, and keeps canonical history intact.",
         &requests,
+        &ContextSnapshotOptions::default().rewrite_known_segments(),
+    ));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn code_mode_forwards_mixed_mcp_content() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    skip_if_wine_exec!(Ok(()), "requires a Windows test_stdio_server binary");
+    let server = start_mock_server().await;
+    let (_test, response) = super::code_mode::run_code_mode_turn_with_rmcp_model(
+        &server,
+        "Show the caption and image from the MCP image tool.",
+        r#"const result = await tools.mcp__rmcp__image_scenario({scenario: "text_then_image", caption: "sample"});
+content(result.content);"#,
+        "gpt-5.5",
+    )
+    .await?;
+    let output = response.single_request().custom_tool_call_output("call-1");
+    assert_eq!(output["output"][1]["text"], "sample");
+    assert_eq!(output["output"][2]["type"], "input_image");
+    insta::assert_snapshot!(context_snapshot::format_request_history_snapshot(
+        "Code Mode forwards MCP text and image blocks to the model in their original order.",
+        &core_test_support::responses::received_responses_requests(&server).await,
         &ContextSnapshotOptions::default().rewrite_known_segments(),
     ));
     Ok(())
@@ -3012,6 +3037,7 @@ async fn guardian_elastic_budgeting_request_history() -> Result<()> {
     const SECTION_TOKENS: usize = ENTRY_TOKENS * TRANSCRIPT_ENTRIES_PER_SECTION;
     const DEFAULT_SECTION_TOKENS: usize = 900;
     const REPEATS: usize = 64;
+    const SELECTED_EXEC_TOKENS: usize = 256;
     skip_if_no_network!(Ok(()));
     let server = responses::start_mock_server().await;
     let commentary = "Untrusted assistant evidence. ".repeat(REPEATS);
@@ -3029,6 +3055,20 @@ async fn guardian_elastic_budgeting_request_history() -> Result<()> {
     let mock = responses::mount_sse_sequence(
         &server,
         vec![
+            sse(vec![
+                ev_custom_tool_call(
+                    "selected", "exec",
+                    r#"await tools.update_plan({plan:[{step:"Inspect",status:"in_progress"}]}); text("selected-" + "x".repeat(640) + "-end");"#,
+                ),
+                ev_completed("lookup"),
+            ]),
+            sse(vec![
+                ev_custom_tool_call(
+                    "unselected", "exec",
+                    r#"text("ordinary-" + "y".repeat(640) + "-end");"#,
+                ),
+                ev_completed("ordinary"),
+            ]),
             sse(vec![
                 earlier_event,
                 commentary_event,
@@ -3051,23 +3091,40 @@ async fn guardian_elastic_budgeting_request_history() -> Result<()> {
     .await;
     let entry_limits = codex_guardian_context::ElasticSectionLimits::new;
     let mut policy = codex_guardian_context::ElasticBudgetConfig {
-        sections: [(
-            codex_guardian_context::ElasticSection::TranscriptMessages,
-            entry_limits(ENTRY_TOKENS, ENTRY_TOKENS)?
-                .with_max_total_section_tokens(SECTION_TOKENS)?,
-        )]
+        sections: [
+            (
+                codex_guardian_context::ElasticSection::TranscriptMessages,
+                entry_limits(ENTRY_TOKENS, ENTRY_TOKENS)?
+                    .with_max_total_section_tokens(SECTION_TOKENS)?,
+            ),
+            (
+                codex_guardian_context::ElasticSection::TranscriptTools,
+                entry_limits(ENTRY_TOKENS, ENTRY_TOKENS)?
+                    .with_max_total_section_tokens(SECTION_TOKENS)?,
+            ),
+        ]
         .into(),
+        ..Default::default()
     };
     // Skills are absent in sync requests and release their entire reservation.
     let skills_minimum = codex_guardian_context::DEFAULT_MAX_INPUT_TOKENS
         - usize::try_from(policy.total_minimum_tokens())?
-        + DEFAULT_SECTION_TOKENS;
+        + DEFAULT_SECTION_TOKENS
+        - SELECTED_EXEC_TOKENS;
     policy.sections.insert(
         codex_guardian_context::ElasticSection::TrustedSkills,
         entry_limits(skills_minimum, DEFAULT_SECTION_TOKENS)?,
     );
     let settings = format!(
-        "[features.guardianv2]\nsync_elastic_budgeting = true\n{}",
+        r#"[features.guardianv2]
+sync_elastic_budgeting = true
+{}
+[features.guardianv2.sync_elastic_sections.transcript_selected_exec_results]
+nested_tool_names = ["update_plan"]
+min_total_section_tokens = {SELECTED_EXEC_TOKENS}
+max_section_entry_tokens = {SELECTED_EXEC_TOKENS}
+max_total_section_tokens = {SELECTED_EXEC_TOKENS}
+"#,
         toml::to_string(&policy)?
             .replace("[sections.", "[features.guardianv2.sync_elastic_sections.")
     );
@@ -3077,6 +3134,12 @@ async fn guardian_elastic_budgeting_request_history() -> Result<()> {
         )
         .with_config(|config| {
             configure_scenario_catalog(config);
+            config.features.enable(Feature::CodeMode).unwrap();
+            config
+                .features
+                .enable(Feature::ExecutedToolCallMetadata)
+                .unwrap();
+            config.update_plan_enabled = true;
             config
                 .features
                 .enable(Feature::GuardianReuseParentCompaction)
@@ -3089,7 +3152,7 @@ async fn guardian_elastic_budgeting_request_history() -> Result<()> {
         .await?;
     test.submit_text_turn(&user_request).await?;
     let requests = mock.requests();
-    let guardian_text = requests[1].message_input_texts("user").join("\n");
+    let guardian_text = requests[3].message_input_texts("user").join("\n");
     assert!(guardian_text.contains(&user_request));
     let transcript = guardian_text
         .split_once(">>> TRANSCRIPT START")
@@ -3100,17 +3163,24 @@ async fn guardian_elastic_budgeting_request_history() -> Result<()> {
         .0;
     assert!(!transcript.contains("Earlier untrusted"));
     assert!(transcript.contains("Untrusted assistant evidence"));
+    let selected = format!("selected-{}-end", "x".repeat(640));
+    assert!(transcript.contains(&selected), "{transcript}");
+    assert!(!transcript.contains(&format!("ordinary-{}-end", "y".repeat(640))));
     assert!(
         requests.last().unwrap().body_json()["input"]
             .to_string()
             .contains(&earlier_commentary)
     );
     let mut snapshot = context_snapshot::format_request_history_snapshot(
-        "Elastic sync budgeting caps entries before deduplication, keeps complete retained instructions, and limits Optional transcript evidence by section.",
+        "Elastic sync budgeting keeps retained instructions, caps ordinary tool evidence, and reserves space for the exec output that ran the configured nested tool.",
         &requests,
         &ContextSnapshotOptions::default().rewrite_known_segments(),
     );
     for (pattern, replacement) in [
+        (
+            r"(?m)^(\s*Wall time) [0-9]+(?:\.[0-9]+)? seconds$",
+            "$1 <DURATION> seconds",
+        ),
         (r#"(?m)^(\s*"cwd": )"[^"]*""#, "$1\"<CWD>\""),
         (
             r#""command": \[\s*(?:"[^"]*",\s*)*("[^\n]*)\n\s*\]"#,

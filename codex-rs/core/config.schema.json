@@ -442,14 +442,6 @@
           "description": "Experimental replacement for the history-retrieval instructions when history tools and Apps are enabled. Omitted or blank values use the built-in prompt.",
           "type": "string"
         },
-        "experimental_policy_template": {
-          "description": "Experimental full Guardian prompt template containing the tenant policy placeholder.",
-          "type": "string"
-        },
-        "extra_policy": {
-          "description": "Additional policy text inserted into the Guardian template's `{{ extra_policy }}` slot.",
-          "type": "string"
-        },
         "policy": {
           "description": "Additional policy instructions inserted into the guardian prompt.",
           "type": "string"
@@ -979,6 +971,9 @@
             "daemon_auto_start": {
               "type": "boolean"
             },
+            "daybreak_program_propagation": {
+              "type": "boolean"
+            },
             "default_mode_request_user_input": {
               "type": "boolean"
             },
@@ -1135,6 +1130,9 @@
             "incremental_tools_legacy": {
               "type": "boolean"
             },
+            "incremental_tools_legacy_gcp": {
+              "type": "boolean"
+            },
             "instant_interrupt": {
               "type": "boolean"
             },
@@ -1199,6 +1197,9 @@
               "type": "boolean"
             },
             "multi_env_copy_file": {
+              "type": "boolean"
+            },
+            "multi_environment_mcp": {
               "type": "boolean"
             },
             "network_proxy": {
@@ -2248,6 +2249,13 @@
           "format": "uint",
           "minimum": 0.0,
           "type": "integer"
+        },
+        "nested_tool_names": {
+          "description": "Exact Code Mode tool names for the transcript_selected_exec_results section.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -3927,6 +3935,16 @@
             }
           ],
           "description": "Optional log exporter"
+        },
+        "headers_helper": {
+          "description": "Command that prints a JSON object of HTTP headers for explicit OTLP HTTP exporters. Runs from CODEX_HOME. Repository-local configuration cannot set OTel options.",
+          "type": "string"
+        },
+        "headers_helper_refresh_interval_ms": {
+          "description": "Interval between helper executions in milliseconds. Defaults to 29 minutes.",
+          "format": "uint64",
+          "minimum": 1.0,
+          "type": "integer"
         },
         "log_agent_responses": {
           "description": "Opt in to logging final main-agent and spawned-subagent responses to an OTLP log exporter. Defaults to false. Response text can be sensitive and is capped at 64 KiB.",
@@ -8043,6 +8061,9 @@
         "daemon_auto_start": {
           "type": "boolean"
         },
+        "daybreak_program_propagation": {
+          "type": "boolean"
+        },
         "default_mode_request_user_input": {
           "type": "boolean"
         },
@@ -8199,6 +8220,9 @@
         "incremental_tools_legacy": {
           "type": "boolean"
         },
+        "incremental_tools_legacy_gcp": {
+          "type": "boolean"
+        },
         "instant_interrupt": {
           "type": "boolean"
         },
@@ -8263,6 +8287,9 @@
           "type": "boolean"
         },
         "multi_env_copy_file": {
+          "type": "boolean"
+        },
+        "multi_environment_mcp": {
           "type": "boolean"
         },
         "network_proxy": {

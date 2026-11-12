@@ -1,5 +1,6 @@
 use crate::McpRefreshReason;
 use crate::agent::LocalAgentControl;
+use codex_mcp::McpServerKey;
 use codex_protocol::ContextWindowId;
 #[path = "compaction_replay_tests.rs"]
 mod compaction_replay_tests;
@@ -2631,6 +2632,25 @@ async fn inter_agent_communication_waits_for_confirmed_delivery_persistence() {
         ]
     );
     let live = session.clone_history().await;
+    let replayed = session
+        .reconstruct_history_from_rollout(&replay_turn, &resumed.history)
+        .await;
+    let delivery_sources = |context: &codex_history::RetainedContext| {
+        context
+            .ordered_entries()
+            .filter_map(|(_, entry)| match entry {
+                codex_history::RetainedContextEntry::AssistantMessage(_) => Some(
+                    context
+                        .source(entry)
+                        .expect("confirmed delivery has a revision"),
+                ),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let expected = delivery_sources(live.retained_context());
+    assert_eq!(expected.len(), 2);
+    assert_eq!(delivery_sources(&replayed.retained_context), expected);
     let communication = live
         .annotated_items()
         .iter()
@@ -4922,7 +4942,7 @@ async fn open_thread_persistence(session: &mut Session) -> PathBuf {
             history_mode: Default::default(),
             subagent_history_start_ordinal: None,
             history_base: None,
-            initial_window_id: ContextWindowId::new_uuid_v7().to_string(),
+            initial_window_id: ContextWindowId::new_uuid_v7(),
             runtime_workspace_roots: None,
             metadata: ThreadPersistenceMetadata {
                 cwd: Some(config.cwd.to_path_buf()),
@@ -6219,6 +6239,7 @@ async fn compaction_persists_resume_metadata_and_companion_records() {
 
     session.multi_agent_version = std::sync::OnceLock::from(MultiAgentVersion::V2);
     let expected = CompactionResumeMetadata {
+        next_item_ordinal: None,
         rejected_audio_file_ids: Default::default(),
         dynamic_tools: Some(Box::new(DynamicToolsSnapshot {
             thread_id: session.thread_id(),
@@ -6768,7 +6789,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         config.model_provider.clone(),
     );
     let agent_control = LocalAgentControl::default();
-    let item_id_generator = Arc::clone(&agent_control.runtime.item_id_generator);
+    let item_id_generator = Session::new_item_id_generator();
     let exec_policy = Arc::new(ExecPolicyManager::default());
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
     let model = get_model_offline_for_tests(config.model.as_deref());
@@ -8716,7 +8737,7 @@ async fn shutdown_complete_does_not_append_to_thread_store_after_shutdown() {
             history_mode: Default::default(),
             subagent_history_start_ordinal: None,
             history_base: None,
-            initial_window_id: ContextWindowId::new_uuid_v7().to_string(),
+            initial_window_id: ContextWindowId::new_uuid_v7(),
             runtime_workspace_roots: None,
             metadata: ThreadPersistenceMetadata {
                 cwd: Some(config.cwd.to_path_buf()),
@@ -8855,7 +8876,7 @@ async fn submission_loop_channel_close_runs_full_thread_teardown() -> anyhow::Re
             history_mode: Default::default(),
             subagent_history_start_ordinal: None,
             history_base: None,
-            initial_window_id: ContextWindowId::new_uuid_v7().to_string(),
+            initial_window_id: ContextWindowId::new_uuid_v7(),
             runtime_workspace_roots: None,
             metadata: ThreadPersistenceMetadata {
                 cwd: Some(config.cwd.to_path_buf()),
@@ -9113,7 +9134,7 @@ where
         config.model_provider.clone(),
     );
     let agent_control = LocalAgentControl::default();
-    let item_id_generator = Arc::clone(&agent_control.runtime.item_id_generator);
+    let item_id_generator = Session::new_item_id_generator();
     let exec_policy = Arc::new(ExecPolicyManager::default());
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
     let model = get_model_offline_for_tests(config.model.as_deref());
@@ -9806,6 +9827,7 @@ async fn mcp_elicitation_reviewer_uses_active_reviewer_and_latest_runtime_policy
 
     let request = codex_mcp::ElicitationReviewRequest {
         server_name: "browser-use".to_string(),
+        server_key: McpServerKey::unscoped("browser-use"),
         request_id: rmcp::model::NumberOrString::Number(7),
         elicitation: codex_rmcp_client::Elicitation::Mcp(
             rmcp::model::ElicitRequestParams::FormElicitationParams {
@@ -11839,7 +11861,7 @@ async fn attach_in_memory_thread_store(
             history_mode: Default::default(),
             subagent_history_start_ordinal: None,
             history_base: None,
-            initial_window_id: ContextWindowId::new_uuid_v7().to_string(),
+            initial_window_id: ContextWindowId::new_uuid_v7(),
             runtime_workspace_roots: None,
             metadata: ThreadPersistenceMetadata {
                 cwd: Some(config.cwd.to_path_buf()),
@@ -13395,9 +13417,9 @@ async fn sample_rollout(
         guardian_history: None,
         mcp_resource_origins: None,
         window_number: Some(window_number),
-        first_window_id: Some(window_ids.first_window_id.to_string()),
-        previous_window_id: window_ids.previous_window_id.map(|id| id.to_string()),
-        window_id: Some(window_ids.window_id.to_string()),
+        first_window_id: Some(window_ids.first_window_id),
+        previous_window_id: window_ids.previous_window_id,
+        window_id: Some(window_ids.window_id),
         compaction_response_id: None,
         latest_token_usage_record: None,
         resume_metadata: None,
@@ -13430,9 +13452,9 @@ async fn sample_rollout(
         guardian_history: None,
         mcp_resource_origins: None,
         window_number: Some(window_number),
-        first_window_id: Some(window_ids.first_window_id.to_string()),
-        previous_window_id: window_ids.previous_window_id.map(|id| id.to_string()),
-        window_id: Some(window_ids.window_id.to_string()),
+        first_window_id: Some(window_ids.first_window_id),
+        previous_window_id: window_ids.previous_window_id,
+        window_id: Some(window_ids.window_id),
         compaction_response_id: None,
         latest_token_usage_record: None,
         resume_metadata: None,
@@ -13609,6 +13631,38 @@ async fn session_start_hooks_require_project_trust_without_config_toml() -> std:
         }
     }
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn mcp_refresh_rejects_clearing_apps_that_exposes_invalid_user_config() -> anyhow::Result<()>
+{
+    let session = make_session_with_config(|config| {
+        let user_apps = toml::toml! {
+            apps.calendar.enabled = "false"
+            apps.drive.enabled = false
+        };
+        config.config_layer_stack = config
+            .config_layer_stack
+            .with_user_config(&config.codex_home.join(CONFIG_TOML_FILE), user_apps.into())
+            .unwrap()
+            .with_session_apps(toml::toml! { calendar.enabled = false }.into())
+            .unwrap();
+    })
+    .await?;
+    let current = session.get_config().await;
+    let mut next = current.as_ref().clone();
+    next.config_layer_stack = next
+        .config_layer_stack
+        .with_session_apps(toml::Table::new().into())?;
+
+    assert_eq!(
+        session.refresh_mcp_config(current, next).await,
+        crate::ConfigRefreshOutcome::Rejected
+    );
+    let config = session.get_config().await;
+    let policy = codex_connectors::AppToolPolicyEvaluator::new(&config.config_layer_stack);
+    assert!(!policy.app_enabled("drive"));
     Ok(())
 }
 

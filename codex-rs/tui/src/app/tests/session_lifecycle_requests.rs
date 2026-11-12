@@ -434,11 +434,20 @@ async fn cloud_resume_picker_reconciles_admitted_steers() -> Result<()> {
                         Ok(serde_json::json!({"thread": thread}))
                     }
                     ClientRequest::ThreadResume { params, .. } => {
-                        let thread = if params.thread_id == original.to_string() {
-                            &original_thread
+                        let mut thread = if params.thread_id == original.to_string() {
+                            original_thread.clone()
                         } else {
-                            &other_thread
+                            other_thread.clone()
                         };
+                        if params.thread_id == original.to_string()
+                            && resumed_threads.contains(&params.thread_id)
+                        {
+                            thread.turns.push(test_turn(
+                                "missed-turn",
+                                TurnStatus::Completed,
+                                vec![agent_item("missed-item", "Missed response", None)],
+                            ));
+                        }
                         resumed_threads.push(params.thread_id);
                         Ok(serde_json::json!({
                             "thread": thread,
@@ -557,7 +566,40 @@ async fn cloud_resume_picker_reconciles_admitted_steers() -> Result<()> {
         /*replay_kind*/ None,
     );
     assert!(app.chat_widget.queued_user_message_texts().is_empty());
+    let current_session = SessionSelection::Resume(SessionTarget {
+        backend_id,
+        path: None,
+        thread_id: original,
+        cwd: None,
+        history_mode: None,
+    });
+    app.chat_widget.thread_stream_disconnected = true;
+    app.handle_backend_event(
+        &server,
+        crate::app_server_session::AppServerSessionEvent {
+            backend_id,
+            event: AppServerEvent::ThreadStreamReconnected(original.to_string()),
+        },
+    )
+    .await;
+    drain_app_events(&mut app, &mut tui, &mut server, &mut events).await?;
     insta::assert_snapshot!(rendered_responses(&app), @"• Canonical response");
+
+    app.chat_widget
+        .apply_external_edit("Keep this draft".into());
+    app.apply_resume_picker_selection(&mut tui, &mut server, current_session.clone())
+        .await?;
+    drain_app_events(&mut app, &mut tui, &mut server, &mut events).await?;
+    insta::assert_snapshot!(rendered_responses(&app), @"
+    • Canonical response
+    • Missed response
+    ");
+    assert_eq!(
+        app.chat_widget.composer_text_with_pending(),
+        "Keep this draft"
+    );
+    app.apply_resume_picker_selection(&mut tui, &mut server, current_session)
+        .await?;
 
     for notification in [
         ServerNotification::ItemStarted(ItemStartedNotification::new(
@@ -581,13 +623,21 @@ async fn cloud_resume_picker_reconciles_admitted_steers() -> Result<()> {
     drain_app_events(&mut app, &mut tui, &mut server, &mut events).await?;
     insta::assert_snapshot!(rendered_responses(&app), @"
     • Canonical response
+    • Missed response
     • New response
     ");
     assert!(
         !std::iter::from_fn(|| ops.try_recv().ok()).any(|op| matches!(op, Op::UserTurn { .. }))
     );
     server.shutdown().await?;
-    assert_eq!(serve.await?, [other.to_string(), original.to_string()]);
+    assert_eq!(
+        serve.await?,
+        [
+            other.to_string(),
+            original.to_string(),
+            original.to_string()
+        ]
+    );
     Ok(())
 }
 
@@ -1105,6 +1155,54 @@ async fn complete_managed_worktree_creation(
 }
 
 #[tokio::test]
+async fn returning_from_side_chat_reads_parent_only_when_reattaching() -> Result<()> {
+    let (mut app, _home) = make_history_test_app().await?;
+    enable_side_retention(&mut app)?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    tui.set_owned_screen(/*owned*/ true)?;
+    let (mut server, requests, proxy) = start_recording_app_server(
+        &app.config,
+        /*blocked_thread_list*/ None,
+        /*failed_thread_name*/ None,
+    )
+    .await?;
+    let started = server.start_thread(&app.config).await?;
+    let parent = started.session.thread_id;
+    app.enqueue_primary_thread_session(started.session, started.turns)
+        .await?;
+    let side = server.start_thread(&app.config).await?;
+    let child = side.session.thread_id;
+    app.side_threads.insert(child, SideThreadState::new(parent));
+    app.ensure_thread_channel(child)
+        .store
+        .lock()
+        .await
+        .set_session(side.session, side.turns);
+
+    for needs_reattach in [false, true] {
+        app.select_agent_thread(&mut tui, &mut server, child)
+            .await?;
+        assert_eq!(app.current_displayed_thread_id(), Some(child));
+        if needs_reattach {
+            app.ensure_thread_channel(parent).mark_replay_only();
+        }
+        app.select_agent_thread(&mut tui, &mut server, parent)
+            .await?;
+        assert_eq!(app.current_displayed_thread_id(), Some(parent));
+        let reads = recorded_params(&requests, "thread/read");
+        assert_eq!(
+            reads
+                .iter()
+                .any(|params| params["threadId"] == parent.to_string()),
+            needs_reattach
+        );
+    }
+    server.shutdown().await?;
+    proxy.await??;
+    Ok(())
+}
+
+#[tokio::test]
 async fn same_thread_retry_keeps_subscription_and_restores_draft() -> Result<()> {
     let (mut app, codex_home) = make_history_test_app().await?;
     let thread_id = ThreadId::from_string(
@@ -1180,6 +1278,7 @@ pub(super) enum HistoryCapabilities {
     Current,
     LegacyOnly,
     LegacyOnlyUnsupportedVariant,
+    FirstTurnPageUnsupported,
     LegacyDynamicToolsAndHistory,
     ForkHydrationFails,
     ReadAfterResumeFails,
@@ -1382,6 +1481,12 @@ pub(super) async fn start_recording_app_server_with_realtime_speech(
                     }
                     let request_id = request.id.clone();
                     let params = request.params.as_ref();
+                    let legacy_history = matches!(
+                        history_capabilities,
+                        HistoryCapabilities::LegacyOnly
+                            | HistoryCapabilities::LegacyOnlyUnsupportedVariant
+                            | HistoryCapabilities::LegacyDynamicToolsAndHistory
+                    );
                     let requires_pagination = match request.method.as_str() {
                         "thread/start" => params
                             .and_then(|params| params.get("historyMode"))
@@ -1552,12 +1657,9 @@ pub(super) async fn start_recording_app_server_with_realtime_speech(
                                 message: "missing field `inputSchema`".to_string(),
                             },
                         })
-                    } else if matches!(
-                        history_capabilities,
-                        HistoryCapabilities::LegacyOnly
-                            | HistoryCapabilities::LegacyOnlyUnsupportedVariant
-                            | HistoryCapabilities::LegacyDynamicToolsAndHistory
-                    ) && requires_pagination
+                    } else if (legacy_history && requires_pagination)
+                        || (history_capabilities == HistoryCapabilities::FirstTurnPageUnsupported
+                            && request.method == "thread/turns/list")
                     {
                         let (code, message) = if history_capabilities
                             == HistoryCapabilities::LegacyOnlyUnsupportedVariant
@@ -1590,9 +1692,20 @@ pub(super) async fn start_recording_app_server_with_realtime_speech(
                             matches!(inventories, 2 | 4)
                         };
                         let detach = request.method == "thread/unsubscribe";
-                        let request = serde_json::from_value::<ClientRequest>(
+                        let mut request = serde_json::from_value::<ClientRequest>(
                             serde_json::to_value(request)?,
                         )?;
+                        // Simulate an older store while advertising pagination for the first probe.
+                        if (legacy_history
+                            || history_capabilities
+                                == HistoryCapabilities::FirstTurnPageUnsupported)
+                            && let ClientRequest::ThreadStart { params, .. } = &mut request
+                        {
+                            params.history_mode = Some(ThreadHistoryMode::Legacy);
+                        }
+                        let advertise_paginated = history_capabilities
+                            == HistoryCapabilities::FirstTurnPageUnsupported
+                            && matches!(&request, ClientRequest::ThreadRead { params, .. } if !params.include_turns);
                         if let ClientRequest::ThreadList { params, .. } = &request
                             && let Some((root, started, release)) = blocked_thread_list.take()
                         {
@@ -1631,6 +1744,9 @@ pub(super) async fn start_recording_app_server_with_realtime_speech(
                                     ClientRequest::ThreadRealtimeListVoices { .. }
                                 );
                             let mut result = embedded.request(request).await?;
+                            if advertise_paginated && let Ok(value) = &mut result {
+                                value["thread"]["historyMode"] = serde_json::json!("paginated");
+                            }
                             if unknown_voice && let Ok(value) = &mut result {
                                 value["config"]["realtime"]["voice"] =
                                     serde_json::json!("future_voice");
@@ -2252,7 +2368,11 @@ async fn archive_current_thread_returns_to_agents() -> Result<()> {
                 break;
             }
         }
-        assert!(app.agents_overview.initialized);
+        assert!(
+            app.agents_overview
+                .initialized
+                .contains(&server.backend_id())
+        );
         assert_eq!(
             (
                 app.active_thread_id,
@@ -4300,9 +4420,13 @@ async fn agents_overview_seeds_loaded_threads_when_recent_listing_is_unavailable
                     .collect::<Vec<_>>(),
                 vec![started.session.thread_id]
             );
-            assert!(app.agents_overview.initialized);
+            assert!(
+                app.agents_overview
+                    .initialized
+                    .contains(&app_server.backend_id())
+            );
             assert_eq!(
-                app.agents_overview.discovery.has_more(),
+                app.agents_overview.has_more(app_server.backend_id()),
                 capabilities == HistoryCapabilities::ThreadListFails
             );
             if attempt == 0 {
@@ -4318,7 +4442,7 @@ async fn agents_overview_seeds_loaded_threads_when_recent_listing_is_unavailable
                     )),
                 )
                 .await;
-                assert!(app.agents_overview.request_id.is_none());
+                assert!(app.agents_overview.active_refresh.is_none());
             }
         }
         let list_requests = recorded_params(&requests, "thread/list");
