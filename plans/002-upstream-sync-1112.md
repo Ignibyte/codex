@@ -584,3 +584,7 @@ Final audit: sealed 1112d `SHA256SUMS` **PASS 52/52**, including both manifests,
 ```text
 FORK PACKAGE READY /srv/stacks/codex/dist/1112d 87b000eb4f2b bd2ed101e191 BWRAP bd2ed101e19111f5c06ea4bb16ace19ca10693a56b343265b156937d4434f023
 ```
+
+### Owner merge approval — 2026-11-12 13:24 CST
+
+APPROVED to merge `plan/002-shipped-package` with `--no-ff` and push main, per `/tmp/fork-brief-merge-003.txt` and the owner's instruction in this session. Owner reports 1112d live at `/opt/fleet-codex/6cb7fd718329da87bfd1dcf4c10536cf82b1c367-1112d`, all 52 checksums/all 45 stock paths verified, three real tool turns and packaged preflight passing, and the Python spec manager sealing real cards on it. These are owner-reported live-host results; this seat did not contact either host. Prior proof and original 14 upstream-owned failures remain recorded as stated above. The complete-package gate was rerun before this approval record and passes. Plan 003 build approval has four additions in that brief, but the subsequent transport brief orders a plan-004 design note and stop before implementation.
