@@ -105,3 +105,8 @@ The immediate source is `codex-rs/cli/tests/app_server_daemon/support.rs:25`, wh
 `dist/1112/INTERFACE.md` is written from the merged source with file:line citations for transport, send/receive/ack/status/recovery, receipts, idempotency, addressing, and explicit session wake/reconciliation. Its source locations were checked. `docs/fork-mailbox.md` is drafted. No doc tests, release builds, mailbox qualifications, binary manifest/checksums, changelog completion entry, main merge, or push has been performed. None is claimed as passing.
 
 Additional review fact: the imported upstream delta contains trailing whitespace in two TUI snapshots (`offline_delete_after_wheel.snap:8` and `owned_startup_layout.snap:17`); both complete blobs match pinned upstream. The planned ordinary `git diff --check` passes. No snapshot bytes were changed and no exception was assumed.
+
+
+## Owner-approved recovery, 2026-11-12
+
+Owner seat approved rerunning the failed/unrun cases, then the full planned proof, release build, and mailbox qualification. Use `/srv/stacks/codex-tmp-1112` on NVMe for TMPDIR and disposable fixtures; leave the host `/tmp` unchanged, delete nothing outside that directory, and remove the directory when done. The approved private mount namespace maps only the test process's `/tmp` to a subdirectory there, because the failed helpers explicitly ignore TMPDIR. A fresh HOME/XDG configuration and isolated Git configuration keep owner settings out of fixture expectations. Keep eight build jobs and eight test threads. Recover the exact passed-case set from the original JUnit report rather than guessing which tests ran. No source change or failure waiver is authorized by this recovery approval.
