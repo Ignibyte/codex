@@ -86,6 +86,39 @@ def packaging_hashes():
     return {path: digest(REPO / path) for path in paths}
 
 
+def reuse_complete_package(base, stage, dest, old, source):
+    """Operator revision 2: copy every base byte, refresh only operator assets."""
+    verify_voice(base,source,old['target'],old['workspaceVersion'])
+    if not check(base,old['target'])['passed']:
+        raise RuntimeError('Complete base package required for operator-only reuse')
+    operator_assets(stage)
+    shutil.copy2(REPO/'docs/fork-mailbox.md',stage/'INTERFACE.md')
+    current=inventory(stage)
+    runtime={p:v for p,v in old['files'].items() if p.startswith(('bin/','codex-path/','codex-resources/'))
+             or p in ('codex','codex-package.json')}
+    if any(current.get(p)!=v for p,v in runtime.items()):
+        raise RuntimeError('STOP: reused runtime or voice byte/metadata changed')
+    operators=set(old['files'])|set(current)
+    operators-=set(runtime)
+    changes={p:dict(oldSha256=old['files'].get(p,{}).get('sha256'),newSha256=current.get(p,{}).get('sha256'))
+             for p in sorted(operators)}
+    for item in changes.values():item['changed']=item['oldSha256']!=item['newSha256']
+    result=check(stage,old['target'])
+    if not result['passed']:raise RuntimeError('Operator package completeness failed')
+    manifest=dict(old,builtAtUtc=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        packagingCommit=output(['git','rev-parse','HEAD']),packagingScriptsSha256=packaging_hashes(),
+        basePackage=str(base),operatorAssetsRevision=2,operatorAssets=changes,
+        runtimeReuse=dict(identicalTo='1112f',baseManifestSha256=digest(base/'MANIFEST.json'),
+                         allIdentical=True,files={p:v['sha256'] for p,v in runtime.items()}),
+        compatibilityOnlyPriorQualification=old['qualification'],
+        qualification={'status':'pending corrected renewal-off pilot and packaged tool proof'},completeness=result)
+    manifest.pop('qualificationCommit',None)
+    result['directory']=str(dest)
+    seal(stage,manifest)
+    os.rename(stage,dest)
+    print('Complete operator package created without Cargo/Bazel:',dest,flush=True)
+
+
 def ready_line(directory, manifest):
     files = manifest['files']
     return (f"FORK PACKAGE READY {directory} {files['bin/codex']['sha256'][:12]} "
@@ -122,6 +155,8 @@ def main():
     p.add_argument('--record-qualification', type=Path,
                    help='Seal qualification results into an existing package; never rebuild or replace it')
     a = p.parse_args(); dest = a.output.resolve()
+    if dest.name.endswith('-1112f2') and not a.base_package and not a.record_qualification:
+        raise RuntimeError('1112f2 requires whole-base reuse; Cargo/voice compilation is forbidden')
     if dest.parent != REPO / 'dist':
         raise RuntimeError('Output must be a direct child of the fork dist directory')
     if a.record_qualification:
@@ -137,6 +172,12 @@ def main():
         manifest['packagingScriptsSha256'] = packaging_hashes()
         shutil.copy2(REPO / 'docs/fork-mailbox.md', dest / 'INTERFACE.md')
         operator_assets(dest)
+        if manifest.get('operatorAssetsRevision')==2:
+            for name,expected in manifest['runtimeReuse']['files'].items():
+                if digest(dest/name)!=expected:raise RuntimeError('STOP: reused runtime changed during seal')
+            for name,item in manifest['operatorAssets'].items():
+                item['newSha256']=digest(dest/name) if (dest/name).is_file() else None
+                item['changed']=item['oldSha256']!=item['newSha256']
         seal(dest, manifest)
         if manifest['qualification'].get('status') == 'passed':
             print(ready_line(dest, manifest), flush=True)
@@ -177,6 +218,9 @@ def main():
             raise RuntimeError('STOP: bwrap differs from the release source-build expectation: ' + env['CODEX_BWRAP_SHA256'])
         shutil.copytree(base, base_stage)
         (base_stage / 'MANIFEST.json').unlink(); (base_stage / 'SHA256SUMS').unlink()
+        if a.output.name==source+'-1112f2':
+            reuse_complete_package(base,base_stage,dest,base_manifest,source)
+            return
     else:
         env.update(resolve_codex_v8_cargo_env(TARGET_SPECS[a.target]))
         native = target_dir / a.target / 'release'

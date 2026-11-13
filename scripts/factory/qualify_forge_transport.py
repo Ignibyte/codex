@@ -58,7 +58,8 @@ def fixture(a):
         p=run(args,uid=uid,expected=expected,payload=payload)
         return json.loads(p.stdout if not expected else p.stderr)
     def setup(*args,uid=SERVICE,expected=0):
-        return command('/usr/bin/python3','-I',helper,*args,uid=uid,expected=expected)
+        p=run(['/usr/bin/python3','-I',helper,*args],uid=uid,expected=expected)
+        return json.loads(p.stdout.splitlines()[-1] if not expected else p.stderr)
     def admin(*args): return command(binary,*args)
     def snapshot(): return admin('inspect','--state',state/'service')
     def binding(role): return (remote_cfg if role=='pilot-seat' else cfg)/(role+'.binding.json')
@@ -116,71 +117,146 @@ def fixture(a):
         run(['/usr/bin/ip','link','set','lo','up'])
         for ip in ('10.200.68.55','10.200.68.77'):
             run(['/usr/bin/ip','address','add',ip+'/32','dev','lo'])
-        for c,s,r,roles in [(cfg,state,runtime,('spec-manager','foreman-bot')),
-                            (remote_cfg,remote_state,remote_run,('pilot-seat',))]:
-            directory(c,mode=0o2750);directory(s,mode=0o2710);directory(r,mode=0o2710)
-            directory(c/'credentials',uid=AGENT);directory(s/'native',mode=0o710)
-            for role in roles:directory(s/'native'/role,uid=AGENT)
-        assert setup('init','--pilot','--defer-remote','--bin-dir',pkg/'bin',
-                     '--config-root',cfg,'--state-root',state,'--run-root',runtime,
-                     '--remote-config-root',remote_cfg,'--remote-state-root',remote_state,'--remote-run-root',remote_run,
-                     '--agent-uid',AGENT,'--remote-agent-uid',AGENT,'--remote-service-uid',SERVICE)['remoteAdmitted'] is False
-        meta=load(cfg/'setup.json'); before=snapshot()
-        setup('source-keygen','--config-root',cfg)
-        keyroot=Path('/etc/ssh'); keyroot.mkdir(exist_ok=True)
-        Path('/run/sshd').mkdir(exist_ok=True)
-        run(['/usr/bin/ssh-keygen','-q','-t','ed25519','-N','','-f',keyroot/'proof-host'])
+        keyroot=Path('/etc/ssh');keyroot.mkdir(exist_ok=True);Path('/run/sshd').mkdir(exist_ok=True)
+        for name in ('proof-client','proof-host','proof-operator'):
+            run(['/usr/bin/ssh-keygen','-q','-t','ed25519','-N','','-f',keyroot/name])
         inp=Path('/etc/pilot-transport-input.json')
-        save(inp,dict(forgeAddress='10.200.68.55',sourceAddress='10.200.68.77',port=22,
-                      clientPublicKey=(cfg/'transport/forge-ed25519.pub').read_text(),
-                      sourceHostKey=(keyroot/'proof-host.pub').read_text()))
+        save(inp,dict(forgeAddress='10.200.68.55',sourceAddress='10.200.68.77',port=22,sshUnit='sshd.service',
+             clientPublicKey=(keyroot/'proof-client.pub').read_text(),sourceHostKey=(keyroot/'proof-host.pub').read_text(),
+             serviceUid=SERVICE,serviceGid=SERVICE,clientsGid=AGENT,agentUid=AGENT,agentGid=AGENT,remoteAgentUid=AGENT,remoteAgentGid=AGENT))
         stage=Path('/var/lib/fleet-codex-pilot-stage')
-        staged=setup('configure-transport','--direction','forge-initiated','--config-root',cfg,
-                     '--input',inp,'--output',stage,uid=0)
-        assert staged['servicesStarted']==0 and snapshot()==before
-        generation=load(stage/'generation.json')
-        assert all(sha(stage/name)==data['sha256'] for name,data in generation['files'].items())
-        targets={'entry.json':'fleet-bridge-pilot-entry.json','launch.json':'fleet-bridge-pilot-launch.json'}
-        for name in ('fleet-bridge-pilot-login','fleet-bridge-pilot-launcher','fleet-bridge-pilot.keys','fleet-bridge-pilot-match.conf','entry.json','launch.json'):
-            dst=keyroot/targets.get(name,name);shutil.copyfile(stage/name,dst)
-            dst.chmod(int(generation['files'][name]['mode'],8))
-        for name,dst,mode in [('source.json',cfg/'transport/source.json',0o600),
-                              ('source_known_hosts',cfg/'transport/source_known_hosts',0o600),('setup.json',cfg/'setup.json',0o640)]:
-            shutil.copyfile(stage/name,dst);os.chown(dst,SERVICE,AGENT);dst.chmod(mode)
-        shutil.copyfile(cfg/'pilot-seat.binding.json',binding('pilot-seat'))
-        os.chown(binding('pilot-seat'),SERVICE,AGENT);binding('pilot-seat').chmod(0o640)
-        checks.append('generated_generation_preserves_ids_grants_registry_and_starts_nothing')
-        sshconf=keyroot/'transport-proof.conf'
+        staged=setup('prepare-pilot','--input',inp,'--output',stage,uid=0)
+        generation=load(stage/'generation.json');meta=load(stage/'pilot-plan.json')['setup']
+        assert not cfg.exists() and not state.exists() and not remote_cfg.exists() and not remote_state.exists()
+        assert staged['servicesStarted']==0 and all(sha(stage/n)==x['sha256'] for n,x in generation['files'].items())
+        assert all('PRIVATE KEY' not in (stage/n).read_text() for n in generation['files'])
+        refused=setup('apply-pilot','--stage',stage,'--host','forge','--approved-generation',str(uuid.uuid4()),'--private-key',keyroot/'proof-client',uid=0,expected=1)
+        assert refused['error']=='ops_review_required' and not cfg.exists() and not state.exists()
+        sudo_query=subprocess.run(['/usr/bin/sudo','-n','-l','-U','fleet-bridge'],capture_output=True,text=True,env={'PATH':'/usr/bin:/bin','LC_ALL':'C'})
+        save(work/'sudo-query.json',dict(exit=sudo_query.returncode,stdout=sudo_query.stdout,stderr=sudo_query.stderr))
+        setup('apply-pilot','--stage',stage,'--host','forge','--approved-generation',generation['generation'],'--private-key',keyroot/'proof-client',uid=0)
+        assert snapshot()['remoteHosts']=={} and not (cfg/'operator/proxy.json').exists()
+        registry_before=sha(state/'service/registry.json');names_before=set((cfg/'operator').iterdir())
+        refused=setup('ssh-config','--config-root',cfg,'--client-public-key','/does-not-exist',expected=1)
+        assert refused['error']=='pilot_legacy_ssh_refused'
+        assert sha(state/'service/registry.json')==registry_before and set((cfg/'operator').iterdir())==names_before
+        refused=setup('render-renewal','--config-root',cfg,'--output','/var/lib/must-not-exist',uid=0,expected=1)
+        assert refused['error']=='pilot_renewal_off' and not Path('/var/lib/must-not-exist').exists()
+        checks.append('offline_whole_public_generation_no_private_bytes_no_host_mutation_or_services_before_approval')
+        checks.append('pilot_legacy_sudo_refuses_before_key_read_or_write_no_reverse_proxy_and_renewal_render_refused')
+        # Two mount views model distinct host login shells with the same service
+        # UID. The SSH daemon and dev-3 local verifier share the dev-3 view;
+        # the connector/systemd and Forge verifier retain nologin. One kernel.
+        devpasswd=keyroot/'proof-dev-passwd'
+        original=Path('/etc/passwd').read_text()
+        devtext='\n'.join(':'.join(line.split(':')[:6]+['/etc/ssh/fleet-bridge-pilot-login']) if line.startswith('fleet-bridge:') else line
+                          for line in original.splitlines())+'\n'
+        devpasswd.write_text(devtext);devpasswd.chmod(0o644)
+        ns=start(['/usr/bin/unshare','--mount','--fork','/bin/sh','-c',
+            'mount --make-rprivate / && mount --bind /etc/ssh/proof-dev-passwd /etc/passwd && touch /run/dev-mount-ready && exec /usr/bin/sleep 240'],uid=0)
+        wait(lambda:Path('/run/dev-mount-ready').exists(),'dev-3 mount view')
+        def devrun(args,expected=0,env=None):
+            return run(['/usr/bin/nsenter','-t',ns.pid,'-m','--',*args],expected=expected,env=env)
+        def devsetup(*args,expected=0):
+            p=devrun(['/usr/bin/python3','-I',helper,*args],expected)
+            return json.loads(p.stdout.splitlines()[-1] if not expected else p.stderr)
+        devsetup('apply-pilot','--stage',stage,'--host','dev-3','--approved-generation',generation['generation'])
+        sshconf=keyroot/'sshd_config'
+        operator_key=(keyroot/'proof-operator.pub').read_text().strip()
+        (keyroot/'proof-operator.keys').write_text('restrict,command="/usr/bin/sleep 180" '+operator_key+'\n')
         sshconf.write_text('\n'.join(['Port 22','ListenAddress 10.200.68.77',f'HostKey {keyroot}/proof-host',
-          f'PidFile {keyroot}/proof.pid','AllowUsers fleet-bridge','UsePAM yes','PasswordAuthentication no',
-          'KbdInteractiveAuthentication no','PermitUserEnvironment no','StrictModes yes','UseDNS no','PrintMotd no','LogLevel VERBOSE',
-          f'Include {keyroot}/fleet-bridge-pilot-match.conf','']))
+          f'PidFile {keyroot}/proof.pid','AllowUsers fleet-bridge ops-proof',f'AuthorizedKeysFile {keyroot}/proof-operator.keys',
+          'UsePAM yes','PasswordAuthentication no','KbdInteractiveAuthentication no','PermitUserEnvironment no',
+          'StrictModes yes','UseDNS no','PrintMotd no','LogLevel VERBOSE',
+          (stage/'sshd-include.fragment').read_text(),'']))
         sshconf.chmod(0o600)
-        run(['/usr/bin/sshd','-t','-f',sshconf])
-        actual=run(['/usr/bin/sshd','-T','-f',sshconf,'-C','user=fleet-bridge,host=proof,addr=10.200.68.55']).stdout.decode()
-        (work/'effective-sshd.txt').write_text(actual)
-        for line in ('permittty no','allowtcpforwarding no','x11forwarding no','allowagentforwarding no',
-                     'permittunnel no','authenticationmethods publickey','authorizedkeysfile /etc/ssh/fleet-bridge-pilot.keys'):
-            assert line in actual.lower(),line
-        assert next(x for x in Path('/etc/shadow').read_text().splitlines() if x.startswith('fleet-bridge:')).split(':')[1]=='!'
-        denied=subprocess.run(['/usr/bin/sudo','-n','true'],user=SERVICE,group=SERVICE,extra_groups=[AGENT],capture_output=True)
-        assert denied.returncode!=0
-        sshd=start(['/usr/bin/sshd','-D','-e','-f',sshconf],uid=0)
+        unit=Path('/etc/systemd/system/sshd.service')
+        unit.write_text('[Service]\nType=simple\nExecStart=/usr/bin/nsenter -t '+str(ns.pid)+' -m -- /usr/bin/sshd -D -e\nExecReload=/bin/kill -HUP $MAINPID\nKillMode=control-group\n')
+        run(['/usr/bin/systemctl','daemon-reload']);run(['/usr/bin/systemctl','start','sshd.service'])
         wait(lambda:(keyroot/'proof.pid').exists(),'sshd readiness')
-        proof=run(['/usr/bin/python3','-I',helper,'verify-launcher','--config',cfg/'transport/source.json'])
-        assert proof.stdout.decode().splitlines()==['AUTHENTICATED_PROTOCOL PASS','SHELL REFUSED','PTY REFUSED','FORWARD REFUSED']
-        checks.append('actual_pam_locked_account_root_key_no_sudo_shell_pty_forward_refused')
-        wait(lambda:bool(run(['/usr/bin/journalctl','-t','fleet-bridge-entry','-o','cat','--no-pager']).stdout.strip()),'refusal syslog')
-        logged=run(['/usr/bin/journalctl','-t','fleet-bridge-entry','-o','cat','--no-pager']).stdout.decode().splitlines()
-        assert len(logged)==1 and re.fullmatch(r'entry_refused host=[0-9a-f-]{36} key=[0-9a-f-]{36} generation=[0-9a-f-]{36} code=command',logged[0])
-        checks.append('one_ids_only_syslog_line_per_wrong_command_without_raw_command_or_bearer')
-        # Use the real administrative admission command with a short lease;
-        # mark the fixture's explicit admission before minting its pilot token.
-        admin('admit-host','--state',state/'service','--host',meta['remoteHost'],'--key-id',meta['transportKey'],'--bridge-uid',SERVICE,'--ttl',8)
-        current=load(cfg/'setup.json');current['remoteAdmitted']=True;save(cfg/'setup.json',current,SERVICE,0o640)
+        sshd_pid=int((keyroot/'proof.pid').read_text())
+        # Preserve a real already-authenticated operator channel across reload.
+        operator_pin=keyroot/'operator_known_hosts';operator_pin.write_text('10.200.68.77 '+(keyroot/'proof-host.pub').read_text())
+        fallback=start(['/usr/bin/ssh','-F','/dev/null','-T','-oBatchMode=yes','-oIdentityAgent=none','-oIdentitiesOnly=yes',
+            '-oStrictHostKeyChecking=yes','-oUserKnownHostsFile='+str(operator_pin),'-oBindAddress=10.200.68.55',
+            '-i',keyroot/'proof-operator','ops-proof@10.200.68.77','keep-fallback'],uid=0)
+        time.sleep(.15);assert fallback.poll() is None
+        # Real privileged account-query negative cases, not a failed sudo true.
+        def account_failure(code):
+            denied=devsetup('verify-host','--stage',stage,'--host','dev-3','--report','/etc/rejected-report.json',expected=1)
+            assert denied['error']==code,denied
+            assert not Path('/etc/rejected-report.json').exists()
+        sudoers=Path('/etc/sudoers');good_sudo=sudoers.read_text()
+        sudoers.write_text(good_sudo+'fleet-bridge ALL=(root) NOPASSWD: /usr/bin/true\n');account_failure('account_sudo_not_denied');sudoers.write_text(good_sudo)
+        devpasswd.write_text(devtext.replace('/etc/ssh/fleet-bridge-pilot-login','/bin/bash'));account_failure('account_shell_denied');devpasswd.write_text(devtext)
+        shadow=Path('/etc/shadow');good_shadow=shadow.read_text();shadow.write_text(good_shadow.replace('fleet-bridge:!:','fleet-bridge::'))
+        account_failure('account_password_not_locked');shadow.write_text(good_shadow)
+        sudoers.write_text('THIS IS INVALID SUDO POLICY\n');account_failure('account_sudo_not_denied');sudoers.write_text(good_sudo)
+        checks.append('condition4_real_allowed_command_wrong_shell_unlocked_password_and_query_failure_all_fail_closed')
+        # Syntax failure blocks the generated reload procedure. It never invokes restart.
+        valid_conf=sshconf.read_text();sshconf.write_text(valid_conf+'UnknownDirective yes\n')
+        bad=devrun(['/bin/sh',stage/'dev3-validate-reload-verify.sh'],expected=1,env={'PATH':'/usr/bin:/bin','FALLBACK_SESSION_OPEN':'yes'})
+        assert b'sshd_configuration_invalid' in bad.stderr and int((keyroot/'proof.pid').read_text())==sshd_pid
+        sshconf.write_text(valid_conf)
+        denied=devrun(['/bin/sh',stage/'dev3-validate-reload-verify.sh'],expected=1,env={'PATH':'/usr/bin:/bin'})
+        assert b'fallback_session_required' in denied.stderr
+        devrun(['/bin/sh',stage/'dev3-validate-reload-verify.sh'],env={'PATH':'/usr/bin:/bin','FALLBACK_SESSION_OPEN':'yes'})
+        assert int((keyroot/'proof.pid').read_text())==sshd_pid and fallback.poll() is None
+        checks.append('generated_include_matchall_effective_options_syntax_gate_reload_only_retains_real_fallback_session')
+        forge_report='/etc/fleet-bridge-pilot-forge-verified.json';source_report='/etc/fleet-bridge-pilot-dev3-verified.json';proof_file='/etc/fleet-bridge-pilot-verified.json'
+        # Missing reports/verification cannot enable either unit or admit a host.
+        missing=setup('activate-pilot','--stage',stage,'--verification','/etc/missing.json',uid=0,expected=1)
+        assert snapshot()['remoteHosts']=={}
+        for name in ('fleet-manager-bridge-pilot.service','fleet-manager-bridge-pilot-source.service'):
+            assert run(['/usr/bin/systemctl','is-enabled',name],expected=1).stdout.strip()==b'disabled'
+            assert run(['/usr/bin/systemctl','is-active',name],expected=3).stdout.strip()==b'inactive'
+        keydir=Path('/etc/fleet-bridge-pilot-ssh');key=keydir/'forge-ed25519'
+        for change,restore in [(lambda:keydir.chmod(0o755),lambda:keydir.chmod(0o750)),(lambda:key.chmod(0o640),lambda:key.chmod(0o600))]:
+            change()
+            denied=setup('verify-host','--stage',stage,'--host','forge','--report',forge_report,uid=0,expected=1)
+            assert denied['error'] in ('transport_key_directory','transport_key_permissions')
+            assert not Path(forge_report).exists();restore()
+        checks.append('private_key_group_read_or_nonprivate_root_directory_refuses_verification')
+        setup('verify-host','--stage',stage,'--host','forge','--report',forge_report,uid=0)
+        valid_report=load(source_report);old_boot=copy.deepcopy(valid_report);old_boot['bootId']=str(uuid.uuid4());save(source_report,old_boot)
+        rejected=setup('verify-pilot','--stage',stage,'--forge-report',forge_report,'--source-report',source_report,'--output',proof_file,uid=0,expected=1)
+        assert rejected['error']=='launcher_source_boot_changed' and not Path(proof_file).exists()
+        stale=copy.deepcopy(valid_report);stale['verifiedAt']-=301;save(source_report,stale)
+        rejected=setup('verify-pilot','--stage',stage,'--forge-report',forge_report,'--source-report',source_report,'--output',proof_file,uid=0,expected=1)
+        assert rejected['error']=='host_report_not_fresh' and not Path(proof_file).exists()
+        save(source_report,valid_report)
+        checks.append('source_boot_binding_and_stale_root_reports_refuse_before_activation')
+        setup('verify-pilot','--stage',stage,'--forge-report',forge_report,'--source-report',source_report,'--output',proof_file,uid=0)
+        proof=load(proof_file);assert len(proof['lines'])==4
+        # Failure must invalidate old verification files instead of leaving a
+        # still-fresh prior success available to the activation command.
+        sudoers.write_text(good_sudo+'fleet-bridge ALL=(root) NOPASSWD: /usr/bin/true\n')
+        rejected=devsetup('verify-host','--stage',stage,'--host','dev-3','--report',source_report,expected=1)
+        assert rejected['error']=='account_sudo_not_denied' and not Path(source_report).exists()
+        setup('activate-pilot','--stage',stage,'--verification',proof_file,uid=0,expected=1)
+        sudoers.write_text(good_sudo)
+        devsetup('verify-host','--stage',stage,'--host','dev-3','--report',source_report)
+        setup('verify-pilot','--stage',stage,'--forge-report',forge_report,'--source-report',source_report,'--output',proof_file,uid=0)
+        checks.append('failed_reverification_removes_prior_success_report_and_blocks_still_fresh_activation')
+        invalid_proof=copy.deepcopy(proof);invalid_proof['lines']=proof['lines'][:3];save('/etc/bad-proof.json',invalid_proof)
+        denied=setup('activate-pilot','--stage',stage,'--verification','/etc/bad-proof.json',uid=0,expected=1)
+        assert denied['error']=='activation_launcher_not_verified' and snapshot()['remoteHosts']=={}
+        setup('activate-pilot','--stage',stage,'--verification',proof_file,uid=0)
+        wait(lambda:(remote_run/'remote.sock').exists(),'gated source readiness')
+        assert len(snapshot()['remoteHosts'])==1
+        keydir=Path('/etc/fleet-bridge-pilot-ssh');key=keydir/'forge-ed25519'
+        assert keydir.stat().st_uid==0 and keydir.stat().st_gid==SERVICE and keydir.stat().st_mode&0o777==0o750
+        assert key.stat().st_uid==SERVICE and key.stat().st_mode&0o777==0o600
+        for path in ('/etc/fleet-manager-bridge-pilot-renew.json','/etc/fleet-manager-bridge-pilot-publisher.json',
+                     '/etc/systemd/system/fleet-manager-bridge-pilot-renew.service','/etc/systemd/system/fleet-manager-bridge-pilot-renew.timer'):
+            assert not Path(path).exists()
+        checks.append('both_fresh_root_host_results_and_four_lines_gate_both_units_private_key_root_directory_verified_renewal_absent')
+        # Switch to explicit owned child sessions for crash fault boundaries.
+        run(['/usr/bin/systemctl','disable','--now','fleet-manager-bridge-pilot-source.service','fleet-manager-bridge-pilot.service'])
+        wait(lambda:not (remote_run/'remote.sock').exists(),'gated units drained')
+        (runtime/'bridge.sock').unlink()
         hub=start([binary,'serve','--state',state/'service','--socket',runtime/'bridge.sock'],ready=True)
-        source=connector()
-        wait(lambda:(remote_run/'remote.sock').exists(),'source socket')
+        source=connector();wait(lambda:(remote_run/'remote.sock').exists(),'source socket')
         for role in ('spec-manager','foreman-bot','pilot-seat'):
             staged=setup('bootstrap','--config-root',cfg,'--role',role)
             target=(remote_cfg if role=='pilot-seat' else cfg)/'credentials'/(role+'.bootstrap')
@@ -190,15 +266,7 @@ def fixture(a):
                               '--bootstrap',target,'--credential-out',b['credential'],uid=AGENT)
             assert enrolled['ok']
         checks.append('three_real_kernel_uid_enrollments_over_local_socket_and_standing_openssh')
-        lease=snapshot()['remoteHosts'][meta['remoteHost']]['expiresAt']
-        wait(lambda:int(time.time())>=lease,'short admitted lease expiry',10)
-        expired=probe('pilot-seat',request('pilot-seat'))
-        assert not expired.get('ok') and expired['error']=='host_credential_inactive',expired
-        # Local seats remain independent when the remote lease lapses.
-        assert probe('spec-manager',request('spec-manager'))['ok']
-        restored=admin('renew-host','--state',state/'service','--host',meta['remoteHost'],'--key-id',meta['transportKey'],'--ttl',86400)
-        assert restored['ok'] and probe('pilot-seat',request('pilot-seat'))['ok']
-        checks.append('per_frame_real_lease_expiry_denies_remote_only_same_key_renewal_restores_without_reconnect')
+        checks.append('three_one_hour_credentials_no_renewal_publisher_or_timer_in_the_notices_only_pilot')
         first=source_record();inode=(remote_run/'remote.sock').stat().st_ino
         for sender,receiver in [('spec-manager','foreman-bot'),('foreman-bot','spec-manager'),('foreman-bot','pilot-seat'),('pilot-seat','foreman-bot')]:
             out=endpoint(sender,'send',recipient=meta['seats'][receiver]);assert out['state']=='service_accepted'
@@ -212,7 +280,8 @@ def fixture(a):
         assert b'network_source_already_running' in duplicate.stderr
         # The production one-command gate also runs while an owner is live:
         # the authenticated busy greeting never takes over its Unix listener.
-        run(['/usr/bin/python3','-I',helper,'verify-launcher','--config',cfg/'transport/source.json'])
+        busy=run([binary,'connect-source','--state',state/'duplicate-state','--config',cfg/'transport/source.json'],uid=SERVICE,expected=1)
+        assert b'network_source_identity_denied' in busy.stderr
         assert source_record()==first and (remote_run/'remote.sock').stat().st_ino==inode
         before=snapshot();time.sleep(1.1)
         assert source.poll() is None and source_record()==first and snapshot()==before
@@ -249,77 +318,26 @@ def fixture(a):
         refused=run([binary,'connect-source','--state',state/'connector','--config',cfg/'transport/source.json'],uid=SERVICE,expected=1)
         assert foreign.read_text()=='must remain';foreign.unlink()
         pin=cfg/'transport/source_known_hosts';correct=pin.read_bytes()
-        pin.write_text('factory-source-'+meta['remoteHost']+' '+(cfg/'transport/forge-ed25519.pub').read_text());pin.chmod(0o600)
+        pin.write_text('factory-source-'+meta['remoteHost']+' '+(keyroot/'proof-client.pub').read_text());pin.chmod(0o600)
         refused=run([binary,'connect-source','--state',state/'connector','--config',cfg/'transport/source.json'],uid=SERVICE,expected=1)
         assert b'network_' in refused.stderr and not (remote_run/'remote.sock').exists()
         pin.write_bytes(correct);source=connector()
         checks.append('unproven_socket_file_and_wrong_inventory_host_pin_fail_closed_without_fallback')
-        # A local publisher call in this one-kernel fixture uses the same R
-        # validation/atomic rename. Full R proof separately tests real SSH
-        # publisher delivery, loss, outage and crash boundaries.
-        old=load(remote_cfg/'credentials/pilot-seat.json')
-        candidate=state/'pending/pilot-rotated.json'
-        admin('rotate','--state',state/'service','--seat',meta['seats']['pilot-seat'],'--output',candidate,'--credential-ttl',3600,'--overlap-seconds',0)
-        assert not probe('pilot-seat',request('pilot-seat')).get('ok')
-        policy=load(binding('pilot-seat'))
-        payload=candidate.read_bytes()
-        installed=run(['/usr/bin/python3','-I',helper,'publish-credential','--policy-json',json.dumps(policy)],uid=AGENT,payload=payload)
-        assert json.loads(installed.stdout)['published'] and load(remote_cfg/'credentials/pilot-seat.json')['credential']!=old['credential']
-        assert probe('pilot-seat',request('pilot-seat'))['ok']
-        checks.append('standing_connection_rechecks_rotated_bearer_and_reads_atomic_R_publication_without_restart')
-        admin('renew-host','--state',state/'service','--host',meta['remoteHost'],'--key-id',meta['transportKey'],'--ttl',86400)
-        assert probe('pilot-seat',request('pilot-seat'))['ok']
-        # Expiry is tested with an actual admitted short-lived additional
-        # generation in a separate registry below; active leases never shorten.
-        checks.append('same_key_host_renewal_keeps_standing_link_valid_and_grants_unchanged')
-        # Exact installed units, including real systemd restart/backoff.
+        # Reverify then use the exact gated units for the restart proof; R stays absent.
         stop(source);source_dead();stop(hub);(runtime/'bridge.sock').unlink()
-        for name in ('fleet-manager-bridge-pilot.service','fleet-manager-bridge-pilot-source.service'):
-            shutil.copyfile(stage/name,Path('/etc/systemd/system')/name)
-        renewal_stage=Path('/var/lib/fleet-manager-bridge-pilot-renew/staged')
-        setup('render-renewal','--config-root',cfg,'--runtime-root','/var/lib/fleet-manager-bridge-pilot-renew',
-              '--unit-prefix','fleet-manager-bridge-pilot','--output',renewal_stage,uid=0)
-        allowlist=Path('/etc/fleet-manager-bridge-pilot-renew.json')
-        shutil.copyfile(renewal_stage/'allowlist.json',allowlist);allowlist.chmod(0o600)
-        for name in ('fleet-manager-bridge-pilot-renew.service','fleet-manager-bridge-pilot-renew.timer'):
-            shutil.copyfile(renewal_stage/name,Path('/etc/systemd/system')/name)
-        renewal_text=(renewal_stage/'fleet-manager-bridge-pilot-renew.service').read_text()
-        assert '--config /etc/fleet-manager-bridge-pilot-renew.json' in renewal_text
-        assert 'ReadWritePaths='+str(state)+' /var/lib/fleet-manager-bridge-pilot-renew '+str(cfg/'credentials') in renewal_text
-        run(['/usr/bin/systemctl','daemon-reload'])
-        run(['/usr/bin/systemctl','start','fleet-manager-bridge-pilot-source.service'])
-        wait(lambda:(remote_run/'remote.sock').exists(),'generated unit entry readiness')
+        setup('verify-host','--stage',stage,'--host','forge','--report',forge_report,uid=0)
+        setup('verify-pilot','--stage',stage,'--forge-report',forge_report,'--source-report',source_report,'--output',proof_file,uid=0)
+        setup('activate-pilot','--stage',stage,'--verification',proof_file,uid=0)
+        wait(lambda:(remote_run/'remote.sock').exists(),'generated unit readiness')
         assert probe('pilot-seat',request('pilot-seat'))['ok']
-        local_tokens={role:load(cfg/'credentials'/(role+'.json'))['credential'] for role in ('spec-manager','foreman-bot')}
-        for role in local_tokens:
-            admin('rotate','--state',state/'service','--seat',meta['seats'][role],
-                  '--output',state/'pending'/('force-'+role),'--credential-ttl',2,'--overlap-seconds',60)
-        run(['/usr/bin/systemctl','start','--wait','fleet-manager-bridge-pilot-renew.service'])
-        for role,token in local_tokens.items():
-            assert load(cfg/'credentials'/(role+'.json'))['credential']!=token
-            assert probe(role,request(role))['ok']
-        before_migration=snapshot();input_data=load(inp);input_data['renewalConfig']=str(allowlist);save(inp,input_data)
-        setup('configure-transport','--direction','forge-initiated','--config-root',cfg,'--input',inp,
-              '--output','/var/lib/fleet-codex-pilot-stage-validation',uid=0)
-        assert snapshot()==before_migration
-        invalid=load(allowlist);invalid['seats'][0]['policy']['grant']['role']='worker'
-        bad_allowlist=Path('/etc/wrong-pilot-renew.json');save(bad_allowlist,invalid)
-        input_data['renewalConfig']=str(bad_allowlist);save(inp,input_data)
-        refused=setup('configure-transport','--direction','forge-initiated','--config-root',cfg,'--input',inp,
-                      '--output','/var/lib/rejected-pilot-generation',uid=0,expected=1)
-        assert refused['error']=='transport_renewal_binding_conflict'
-        assert not Path('/var/lib/rejected-pilot-generation').exists() and snapshot()==before_migration
-        checks.append('pilot_R_unit_uses_own_allowlist_and_writable_roots_rotates_locals_existing_generation_checked_without_mutation')
         unitpid=int(run(['/usr/bin/systemctl','show','-p','MainPID','--value','fleet-manager-bridge-pilot-source.service']).stdout)
-        assert Path('/proc')/str(unitpid) != Path('/proc/1')
         os.kill(unitpid,signal.SIGKILL)
-        wait(lambda:int(run(['/usr/bin/systemctl','show','-p','MainPID','--value','fleet-manager-bridge-pilot-source.service']).stdout) not in (0,unitpid),
-             'systemd backoff/restart',15)
+        wait(lambda:int(run(['/usr/bin/systemctl','show','-p','MainPID','--value','fleet-manager-bridge-pilot-source.service']).stdout) not in (0,unitpid),'systemd backoff/restart',15)
         wait(lambda:(remote_run/'remote.sock').exists(),'restarted entry readiness')
         assert probe('pilot-seat',request('pilot-seat'))['ok']
-        run(['/usr/bin/systemctl','stop','fleet-manager-bridge-pilot-source.service','fleet-manager-bridge-pilot.service'])
-        checks.append('exact_generated_systemd_units_run_as_service_and_restart_after_real_sigkill_with_backoff')
-        wait(lambda:not (remote_run/'remote.sock').exists(),'unit stop closes owned entry')
+        run(['/usr/bin/systemctl','disable','--now','fleet-manager-bridge-pilot-source.service','fleet-manager-bridge-pilot.service'])
+        checks.append('exact_gated_generated_systemd_units_restart_after_sigkill_without_renewal')
+        wait(lambda:not (remote_run/'remote.sock').exists(),'unit stop closes entry')
         # Root generation/code/config integrity and OpenSSH key provenance.
         config=load(cfg/'transport/source.json')
         module=__import__('runpy').run_path(str(helper))
@@ -333,7 +351,7 @@ def fixture(a):
         run(['/usr/bin/ssh-keygen','-q','-t','ed25519','-N','','-f',attacker],uid=SERVICE)
         user_keys=remote_state/'.ssh';directory(user_keys)
         auth=user_keys/'authorized_keys';auth.write_text((Path(str(attacker)+'.pub')).read_text());os.chown(auth,SERVICE,AGENT);auth.chmod(0o600)
-        ignored=[str(attacker) if x==str(cfg/'transport/forge-ed25519') else x for x in sshargs]
+        ignored=[str(attacker) if x==str(keyroot.parent/'fleet-bridge-pilot-ssh/forge-ed25519') else x for x in sshargs]
         assert ssh_once(ignored).returncode==255
         launchfile=keyroot/'fleet-bridge-pilot-launch.json';launch=load(launchfile)
         wrong=copy.deepcopy(launch);wrong['files'][str(binary)]='0'*64;save(launchfile,wrong,mode=0o644)
@@ -476,15 +494,18 @@ def container_fixture(a):
     shutil.copytree('/etc/pam.d',root/'etc/pam.d')
     shutil.copytree('/etc/security',root/'etc/security',symlinks=True)
     with (root/'etc/passwd').open('a') as f:
-        f.write('fleet-bridge:x:65534:65534:Offline service:/var/lib/fleet-manager-bridge-remote-pilot:/etc/ssh/fleet-bridge-pilot-login\n')
+        f.write('fleet-bridge:x:65534:65534:Offline service:/var/lib/fleet-manager-bridge-remote-pilot:/usr/sbin/nologin\n')
+        f.write('ops-proof:x:65531:65531:Offline operator:/nonexistent:/bin/bash\n')
         f.write('transport-agent:x:65532:65532:Offline endpoint:/nonexistent:/usr/bin/nologin\n')
     with (root/'etc/group').open('a') as f:
         f.write('fleet-bridge:x:65534:\nfleet-bridge-clients:x:65532:fleet-bridge,transport-agent\n')
-    (root/'etc/shadow').write_text('root:!:20000:0:99999:7:::\nfleet-bridge:!:20000:0:99999:7:::\ntransport-agent:!:20000:0:99999:7:::\n')
+    (root/'etc/shadow').write_text('root:!:20000:0:99999:7:::\nfleet-bridge:!:20000:0:99999:7:::\ntransport-agent:!:20000:0:99999:7:::\nops-proof:!:20000:0:99999:7:::\n')
     (root/'etc/shadow').chmod(0o600)
     (root/'etc/sudoers').write_text('Defaults env_reset\nroot ALL=(ALL:ALL) NOPASSWD: ALL\n');(root/'etc/sudoers').chmod(0o440)
     (root/'etc/shells').write_text('/bin/bash\n/usr/bin/bash\n/etc/ssh/fleet-bridge-pilot-login\n')
     (root/'etc/machine-id').write_text(uuid.uuid4().hex+'\n')
+    (root/'etc/hostname').write_text('pilot-proof\n')
+    (root/'etc/hosts').write_text('127.0.0.1 localhost pilot-proof\n::1 localhost\n')
     marker=uuid.uuid4().hex+'\n'
     for path in (root/'etc/transport-proof-id',a.work_dir/'fixture-id'):path.write_text(marker);path.chmod(0o600)
     pkg=root/'opt/fleet-codex/proof'
@@ -499,7 +520,7 @@ def container_fixture(a):
     wants=root/'etc/systemd/system/multi-user.target.wants';wants.mkdir();(wants/unit.name).symlink_to('../'+unit.name)
     (a.work_dir/'container-tmp').mkdir(mode=0o1777);(a.work_dir/'container-tmp').chmod(0o1777)
     log=(a.work_dir/'systemd.log').open('w')
-    p=subprocess.Popen(['systemd-nspawn','--quiet','--register=no','--keep-unit','--settings=no','--resolv-conf=off','--private-network',
+    p=subprocess.Popen(['systemd-nspawn','--quiet','--register=no','--keep-unit','--settings=no','--resolv-conf=off','--hostname=pilot-proof','--private-network',
          '--capability=CAP_SYS_ADMIN,CAP_NET_ADMIN','--directory='+str(root),'--bind-ro=/usr',
          '--bind-ro='+str(REPO)+':/repo','--bind='+str(a.work_dir)+':/work','--bind='+str(a.work_dir/'container-tmp')+':/tmp',
          '--boot','--','--log-target=console','--show-status=no'],stdout=log,stderr=log,start_new_session=True)
@@ -530,6 +551,9 @@ def pipeline(a):
     fixture_args=types.SimpleNamespace(**vars(a));fixture_args.work_dir=transport
     started=time.monotonic();container_fixture(fixture_args)
     result=load(inherited/'qualification.json')
+    result['compatibilityOnly']=['renewals','setupCompatibility']
+    result['runtimeCompilation']=False
+    result['faultsReused']=load(root/'reused-faults.json')
     result['forgeTransport']=load(transport/'transport-result.json')
     result['forgeTransport']['seconds']=round(time.monotonic()-started,2)
     result['proofScriptsSha256']['qualify_forge_transport.py']=sha(__file__)
@@ -541,27 +565,21 @@ def pipeline(a):
 
 
 def full_package_proof(a):
-    from check_package import check,TARGET_SPECS
-    from codex_package.v8 import resolve_codex_v8_cargo_env
+    from check_package import check
     assert check(a.package)['passed'] and sha(a.package/'codex-resources/bwrap')==BWRAP
     subprocess.run(['sha256sum','-c','SHA256SUMS'],cwd=a.package,stdout=subprocess.DEVNULL,check=True)
-    for relative in ('setup-forge-box.py','fleet-bridge-ssh-entry.py','systemd/fleet-manager-bridge-source.service.in',
-                     'systemd/fleet-manager-bridge-renew.service.in','systemd/fleet-manager-bridge-renew.timer.in'):
-        assert sha(a.package/relative)==sha(REPO/'scripts/factory'/relative),'packaged operator asset differs: '+relative
-    manifest=load(a.package/'MANIFEST.json');source=manifest['runtimeSourceCommit']
+    manifest=load(a.package/'MANIFEST.json');assert manifest['runtimeReuse']['allIdentical']
     assert manifest['workspaceVersion']=='0.167.2+ignibyte.1112f'
-    env=os.environ.copy();env.update(resolve_codex_v8_cargo_env(TARGET_SPECS[manifest['target']]))
-    env.update(RUSTUP_TOOLCHAIN='1.95.0',CARGO_BUILD_JOBS='8',CARGO_INCREMENTAL='0',CODEX_FACTORY_REVISION=source,
-               STABLE_GIT_COMMIT=source,CODEX_BWRAP_SHA256=BWRAP)
-    target=Path(env.get('CARGO_TARGET_DIR','/mnt/fast/target')).resolve()
-    args=['cargo','build','--locked','--profile','dev-small','--target',manifest['target'],'--target-dir',target,
-          '-p','codex-cli','-p','codex-factory','--features',
-          'codex-install-context/factory,codex-app-server/factory-fixture-faults,codex-factory/fixture-faults',
-          '--bin','codex','--bin','codex-factory-bridge']
-    with (a.work_dir/'fault-build.log').open('wb') as log:
-        subprocess.run(list(map(str,args)),cwd=REPO/'codex-rs',env=env,stdout=log,stderr=subprocess.STDOUT,check=True)
+    for relative in ('setup-forge-box.py','fleet-bridge-ssh-entry.py','systemd/fleet-manager-bridge-source.service.in'):
+        assert sha(a.package/relative)==sha(REPO/'scripts/factory'/relative)
+    cached=Path('/mnt/fast/target')/manifest['target']/'dev-small'
+    expected=manifest['compatibilityOnlyPriorQualification']['forgeTransport']['faultBridgeSha256']
+    assert sha(cached/'codex-factory-bridge')==expected,'same-source cached fault bridge required; NO BUILD permitted'
+    identity=json.loads(run([cached/'codex','factory-info']).stdout)
+    assert identity['revision']==manifest['runtimeSourceCommit'] and identity['version']==manifest['workspaceVersion']
     pair=a.work_dir/'fault-pair';pair.mkdir(mode=0o755)
-    for name in ('codex','codex-factory-bridge'):shutil.copy2(target/manifest['target']/'dev-small'/name,pair/name)
+    for name in ('codex','codex-factory-bridge'):shutil.copy2(cached/name,pair/name)
+    (a.work_dir/'reused-faults.json').write_text(json.dumps({n:sha(pair/n) for n in ('codex','codex-factory-bridge')}))
     subprocess.run(['sudo','-n','unshare','--mount','--fork',sys.executable,__file__,'--pipeline','--package',str(a.package),
         '--work-dir',str(a.work_dir),'--fault-bridge',str(pair/'codex-factory-bridge'),'--fault-cli',str(pair/'codex'),
         '--caller-uid',str(os.getuid())],check=True)
