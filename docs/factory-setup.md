@@ -6,15 +6,15 @@ This package reuses the WHOLE 1112f runtime and voice bundle unchanged. Version 
 
 ## A. Pilot contract and review gate
 
-Renewal is OFF. The pilot must finish before the EARLIEST actual credential expiresAt across its three seats. Each credential lasts 3600 seconds from its own enrollment; setup time consumes earlier seats' lifetime. Bootstrap tokens last 300 seconds; explicit host admission lasts 86400 seconds. None of these clocks starts at package installation or service start.
+Renewal is OFF. The pilot must finish before the EARLIEST expiresAt across its three enrolled seat credentials and the host lease. Each credential lasts 3600 seconds from its own enrollment; setup time consumes earlier seats' lifetime. Explicit host admission lasts 86400 seconds. A bootstrap's 300-second lifetime limits only the step from its issue to successful seat enrollment; it is consumed at enrollment and does not bound the pilot's duration. None of these clocks starts at package installation or service start.
 
 ### Exact END minute — binding before test 2 starts
 
 Ops records the UTC issue time of EACH used bootstrap, the UTC enrollment time of EACH seat, and the UTC host-admission time. Use the service-returned metadata: bootstrapIssuedAt = bootstrap expiresAt - 300; enrolledAt = credential expiresAt - 3600; leaseAdmittedAt = the fresh admitted host expiresAt - 86400. Record those times and the returned expiry values when each operation succeeds; never record bearer/private-key contents. Compare the arithmetic against the returned expiresAt values and synchronize host clocks before proceeding.
 
-The binding cutoff includes ALL of these: bootstrapIssuedAt + 300 for every used bootstrap, enrolledAt + 3600 for every seat, and leaseAdmittedAt + 86400. A bootstrap is consumed by enrollment, but this ruling still requires its 300-second cutoff; do not discard that bound to lengthen the test. It normally makes the available pilot window less than five minutes from the earliest used bootstrap issue, despite the one-hour credential lifetime.
+The pilot cutoff includes exactly FOUR expiry timestamps: the three enrolled seat credential expiresAt values (each enrolledAt + 3600) and the host lease expiresAt (leaseAdmittedAt + 86400). Check each bootstrap-to-enrollment step completed strictly before bootstrapIssuedAt + 300. Once that enrollment succeeds, the bootstrap is used up; its later expiry has no effect on the pilot END minute.
 
-Set EARLIEST_BOUND to the minimum of those seven timestamps. Reserve at least 60 seconds for teardown, and set the exact whole UTC END minute to floor((EARLIEST_BOUND - 60 seconds) / 60 seconds) * 60 seconds. Ops chooses an EARLIER minute if its teardown needs more time; it must never move the recorded END later. If enrollment/verification/setup has already consumed the window, or less than a minute remains before END, do not start test 2: stop and tear down immediately. Do not ignore an expired bound or re-enroll/reset state to extend the same run.
+Set EARLIEST_BOUND to the minimum of those four returned expiry timestamps. Reserve at least 60 seconds for teardown, and set the exact whole UTC END minute to floor((EARLIEST_BOUND - 60 seconds) / 60 seconds) * 60 seconds. Downward minute rounding preserves a safety margin of at least 60 seconds before the earliest credential/lease expiry. Ops chooses an EARLIER minute if its teardown needs more time; it must never move the recorded END later. If enrollment/verification/setup has already consumed the window, or less than a minute remains before END, do not start test 2: stop and tear down immediately. Do not ignore an expired credential/lease bound or re-enroll/reset state to extend the same run.
 
 Before any test notice, Ops writes the computed value as a literal PILOT_END_UTC=YYYY-MM-DDTHH:MM:00Z in the pilot execution record on BOTH hosts, reads it back with the other operator, and prepares the exact scoped stop commands/roster in section H. An unset/ambiguous end time or missing teardown operator/roster blocks the test. The actual minute is computed after real enrollment; the package cannot invent a future enrollment time. No new timer service is introduced: Ops owns the clock watch and hard stop.
 
@@ -47,7 +47,7 @@ def pilot_end(record, now):
         enrolled = timestamp(seat['enrolledAtUtc'])
         if not 0 <= issued <= enrolled <= now or enrolled >= issued + 300:
             raise ValueError('bootstrap/enrollment times invalid')
-        bounds.extend((issued + 300, enrolled + 3600))
+        bounds.append(enrolled + 3600)
     earliest = min(bounds)
     end = ((earliest - 60) // 60) * 60
     if end - now < 60:
@@ -66,7 +66,7 @@ if __name__ == '__main__':
 PY_END
 ```
 
-Worked example ONLY, not the live schedule: admission 2026-11-13T02:20:00Z; bootstrap issues at 02:22:00Z / 02:22:10Z / 02:22:20Z; corresponding enrollments at 02:22:05Z / 02:22:15Z / 02:22:25Z. The earliest bootstrap cutoff is 02:27:00Z, earlier than the credential cutoff 03:22:05Z and next-day lease cutoff. Computed immediately afterward, this run must record PILOT_END_UTC=2026-11-13T02:26:00Z (20:26 CST on November 12). At exactly 02:26:00Z stop test 2 and execute section H, even if a notice, agent or tool turn is still running. An earlier minute may be recorded to allow more teardown time.
+Worked example ONLY, not the live schedule: admission 2026-11-13T02:20:00Z; bootstrap issues at 02:22:00Z / 02:22:10Z / 02:22:20Z; corresponding enrollments at 02:22:05Z / 02:22:15Z / 02:22:25Z. All three enrollments use their bootstrap within 300 seconds. The earliest credential expiresAt is 03:22:05Z; the host lease expires the next day at 02:20:00Z. This run must record PILOT_END_UTC=2026-11-13T03:21:00Z (21:21 CST on November 12), leaving 65 seconds before the earliest expiry. The consumed bootstraps' later expiries do not shorten that window. At exactly 03:21:00Z stop test 2 and execute section H, even if a notice, agent or tool turn is still running. An earlier minute may be recorded to allow more teardown time.
 
 There is no pilot renewal allowlist, broker/runtime directory, publisher policy, publisher key/login, renewal service or timer installation. Do not invoke the legacy renewal commands for a pilot; pilot renewal rendering refuses. R templates/tests retained in the package/repository are compatibility artifacts, not part of this deployment. Future renewal through fleet-bridge's own entry needs its own plan. Root-to-ai publication and home-directory publisher keys are refused.
 
@@ -339,7 +339,7 @@ python3 "$PKG/setup-forge-box.py" enroll --bin-dir "$PKG/bin" \
   --bootstrap /etc/fleet-manager-bridge-remote-pilot/credentials/pilot-seat.bootstrap
 ```
 
-The helpers preserve host/seat/incarnation IDs. Expired unused bootstraps are reminted through bootstrap, never re-init. Credentials last one hour from each enrollment. BEFORE test 2, compute and record the exact PILOT_END_UTC in section A from all enrollment/bootstrap/admission times and returned expiries. Stop and tear down at that minute even if still running; do not merely watch the credential expiresAt. Renew nothing. Test the local pair and foreman/pilot in both directions with notices only. Preserve the original message UUID/payload/sequence for retry; receipt delivery is not a Forge seal or automatic model admission. Existing INTERFACE.md describes thread/factoryMessage and deferred/queue_only behavior. T2 adds no watcher.
+The helpers preserve host/seat/incarnation IDs. Expired unused bootstraps are reminted through bootstrap, never re-init. Each bootstrap must reach successful enrollment within its 300-second lifetime and is consumed there. Credentials last one hour from each enrollment. BEFORE test 2, compute and record the exact PILOT_END_UTC in section A from the three enrolled credential expiresAt values and host lease expiresAt, with the stated safety margin. Stop and tear down at that minute even if still running; do not merely watch the credential expiresAt. Renew nothing. Test the local pair and foreman/pilot in both directions with notices only. Preserve the original message UUID/payload/sequence for retry; receipt delivery is not a Forge seal or automatic model admission. Existing INTERFACE.md describes thread/factoryMessage and deferred/queue_only behavior. T2 adds no watcher.
 
 The standing connection uses actual Unix peer UIDs, pinned host/key/generation/service identity, bounded frames/2.5-second request deadlines, per-frame lease/key/revocation/bearer/boot checks and keepalive 15s/count 3. Idle/reconnect creates no model calls. Duplicate owners cannot replace a live socket; only matching durable inode/device/dead-incarnation proof permits stale cleanup. Public socket publication follows durable owner recording. Existing reboot fencing still requires explicit recovery; none of the operator helpers approves recovery automatically.
 
