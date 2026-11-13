@@ -14,7 +14,7 @@ Ops records the UTC issue time of EACH used bootstrap, the UTC enrollment time o
 
 The pilot cutoff includes exactly FOUR expiry timestamps: the three enrolled seat credential expiresAt values (each enrolledAt + 3600) and the host lease expiresAt (leaseAdmittedAt + 86400). Check each bootstrap-to-enrollment step completed strictly before bootstrapIssuedAt + 300. Once that enrollment succeeds, the bootstrap is used up; its later expiry has no effect on the pilot END minute.
 
-Set EARLIEST_BOUND to the minimum of those four returned expiry timestamps. Reserve at least 60 seconds for teardown, and set the exact whole UTC END minute to floor((EARLIEST_BOUND - 60 seconds) / 60 seconds) * 60 seconds. Downward minute rounding preserves a safety margin of at least 60 seconds before the earliest credential/lease expiry. Ops chooses an EARLIER minute if its teardown needs more time; it must never move the recorded END later. If enrollment/verification/setup has already consumed the window, or less than a minute remains before END, do not start test 2: stop and tear down immediately. Do not ignore an expired credential/lease bound or re-enroll/reset state to extend the same run.
+Set EARLIEST_BOUND to the minimum of those four returned expiry timestamps. The executive sets the safety margin to TEN MINUTES (600 seconds). Subtract 600 seconds, then round DOWN to set the exact whole UTC END minute: floor((EARLIEST_BOUND - 600 seconds) / 60 seconds) * 60 seconds. Downward minute rounding ensures END is at least ten minutes before the earliest credential/lease expiry. Ops chooses an EARLIER minute if its teardown needs more time; it must never move the recorded END later. If enrollment/verification/setup has already consumed the window, or less than a minute remains before END, do not start test 2: stop and tear down immediately. Do not ignore an expired credential/lease bound or re-enroll/reset state to extend the same run.
 
 Before any test notice, Ops writes the computed value as a literal PILOT_END_UTC=YYYY-MM-DDTHH:MM:00Z in the pilot execution record on BOTH hosts, reads it back with the other operator, and prepares the exact scoped stop commands/roster in section H. An unset/ambiguous end time or missing teardown operator/roster blocks the test. The actual minute is computed after real enrollment; the package cannot invent a future enrollment time. No new timer service is introduced: Ops owns the clock watch and hard stop.
 
@@ -49,7 +49,7 @@ def pilot_end(record, now):
             raise ValueError('bootstrap/enrollment times invalid')
         bounds.append(enrolled + 3600)
     earliest = min(bounds)
-    end = ((earliest - 60) // 60) * 60
+    end = ((earliest - 600) // 60) * 60
     if end - now < 60:
         raise ValueError('NO SAFE WINDOW: do not start; tear down now')
     return earliest, end
@@ -66,7 +66,7 @@ if __name__ == '__main__':
 PY_END
 ```
 
-Worked example ONLY, not the live schedule: admission 2026-11-13T02:20:00Z; bootstrap issues at 02:22:00Z / 02:22:10Z / 02:22:20Z; corresponding enrollments at 02:22:05Z / 02:22:15Z / 02:22:25Z. All three enrollments use their bootstrap within 300 seconds. The earliest credential expiresAt is 03:22:05Z; the host lease expires the next day at 02:20:00Z. This run must record PILOT_END_UTC=2026-11-13T03:21:00Z (21:21 CST on November 12), leaving 65 seconds before the earliest expiry. The consumed bootstraps' later expiries do not shorten that window. At exactly 03:21:00Z stop test 2 and execute section H, even if a notice, agent or tool turn is still running. An earlier minute may be recorded to allow more teardown time.
+Worked example ONLY, not the live schedule: admission 2026-11-13T02:20:00Z; bootstrap issues at 02:22:00Z / 02:22:10Z / 02:22:20Z; corresponding enrollments at 02:22:05Z / 02:22:15Z / 02:22:25Z. All three enrollments use their bootstrap within 300 seconds. The earliest credential expiresAt is 03:22:05Z; the host lease expires the next day at 02:20:00Z. Subtracting ten minutes gives 03:12:05Z; rounding down gives PILOT_END_UTC=2026-11-13T03:12:00Z (21:12 CST on November 12), leaving ten minutes and five seconds before the earliest expiry. The consumed bootstraps' later expiries do not shorten that window. At exactly 03:12:00Z stop test 2 and execute section H, even if a notice, agent or tool turn is still running. An earlier minute may be recorded to allow more teardown time.
 
 There is no pilot renewal allowlist, broker/runtime directory, publisher policy, publisher key/login, renewal service or timer installation. Do not invoke the legacy renewal commands for a pilot; pilot renewal rendering refuses. R templates/tests retained in the package/repository are compatibility artifacts, not part of this deployment. Future renewal through fleet-bridge's own entry needs its own plan. Root-to-ai publication and home-directory publisher keys are refused.
 
@@ -354,7 +354,7 @@ AT that minute, even if still running, execute these teardown steps; do not exte
 1. Stop new notices/model-turn admission immediately. Forge Ops/root disables/stops the source and hub using the command below, cutting off both remote and local mailbox service. Do not wait for model work to complete first.
 2. Concurrently, Forge and dev-3 Ops stop/cancel their three scoped pilot endpoint jobs using the recorded controller/unit/cgroup commands. Allow at most ten seconds for normal termination, then kill only still-running verified pilot cgroups/incarnations through the recorded controller. An unfinished test stays unfinished; preserve IDs and facts for later reconciliation, never fabricate completed receipts.
 3. Confirm both bridge units/cgroups and the matching dev-3 SSH/source entry have exited. If anything fails to stop, block further use, use the scoped forced termination in the roster and report the failure immediately; do not resume the pilot. Never remove a live/unproven socket.
-4. Remove this generation's transport authorization/key and SSH integration, restore the locked/no-sudo service account to nologin, validate/read back and RELOAD with the fallback session open, then remove only the verified throwaway roots/files below. Begin this cleanup at END rather than postponing it for ongoing work. Budget these operations inside the reserved margin; choose an earlier END before starting if that requires more than 60 seconds.
+4. Remove this generation's transport authorization/key and SSH integration, restore the locked/no-sudo service account to nologin, validate/read back and RELOAD with the fallback session open, then remove only the verified throwaway roots/files below. Begin this cleanup at END rather than postponing it for ongoing work. Budget these operations inside the ten-minute (600-second) safety margin; choose an earlier END before starting if that requires more time.
 
 ```sh
 # Forge — Ops/root AT the recorded PILOT_END_UTC, even if test 2 is still running
