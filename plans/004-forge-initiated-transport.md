@@ -359,3 +359,14 @@ $ TMPDIR=$TASK/tmp python3 scripts/factory/qualify_forge_transport.py --package 
 ```
 
 Current script/hash and results are recorded in MANIFEST.json; R and legacy setup remain compatibility only. The only payload change from the previous T2 seal is SETUP.md. All 47 runtime/resource/voice/launcher entries, version and bwrap remain identical to 1112f; no helper/Rust/voice change or compilation and no fleet action. Seal with package.py, retain the payload identity across sealing, refresh the READY packet and remove only /srv/stacks/codex-pilot-cutoff-tmp-1112f2. The previous bootstrap-bound READY hashes are superseded. Stop at FORK PACKAGE READY.
+
+### Executive ten-minute safety margin — proof result
+
+PASS on head `64b700f1c4940ee8e4347fc53cb642ece2ab9bba`. The owner/executive sets END = earliest expiresAt of the three enrolled credentials and host lease, minus TEN MINUTES (600s), rounded DOWN to a UTC minute. This supersedes the earlier 60s-margin proof/READY hashes. The actual runbook calculation (embedded Python SHA256 `1d92860f162c7d136b6234694607e8e4213fc081a99a28357bd75d15d7325051`) passes 14 timing/regression checks, including each credential controlling END, an earlier host lease, margin always 600–659 seconds after downward rounding, consumed bootstraps already expired at test time, enrollment at 299s accepted and 300s/301s refused, missing/non-UTC records and usable/no-safe-window boundaries. The worked example END is 03:12:00Z, 605s before the 03:22:05Z credential expiry. All 16 runbook shell blocks pass bash -n without executing host commands; git diff --check passes. Teardown starts at END even if the test remains running, within the ten-minute safety margin.
+
+```text
+$ TMPDIR=$TASK/tmp python3 scripts/factory/qualify_forge_transport.py --package dist/c2f29c9f13bdd414736fc986284cb49672829c58-1112f2 --work-dir $TASK/full-proof --full-package-proof
+{"status":"passed","mailboxLanes":7,"packagedTools":true,"forgeInitiatedTransport":true,"transportChecks":22,"externalModelRequests":0,"externalFleetHostContacts":0,"bwrapSha256":"0ce4fa5b9da214841641f12032afa6cda3d93b45f321705fa8bde5fb2c270b74"}
+```
+
+R/legacy remain compatibility only. Only SETUP.md changes from the prior T2 seal; all 47 runtime/resource/voice/launcher entries remain identical to frozen 1112f. No helper, Rust, voice, fleet host or installed-folder change, and no compilation. Seal with package.py, verify all qualified payloads remain identical and both packages pass 56 sums, refresh /tmp/fork-004-T2-ready.txt, remove only /srv/stacks/codex-pilot-margin-tmp-1112f2, and stop at FORK PACKAGE READY.
