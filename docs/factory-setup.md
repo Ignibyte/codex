@@ -8,6 +8,66 @@ This package reuses the WHOLE 1112f runtime and voice bundle unchanged. Version 
 
 Renewal is OFF. The pilot must finish before the EARLIEST actual credential expiresAt across its three seats. Each credential lasts 3600 seconds from its own enrollment; setup time consumes earlier seats' lifetime. Bootstrap tokens last 300 seconds; explicit host admission lasts 86400 seconds. None of these clocks starts at package installation or service start.
 
+### Exact END minute — binding before test 2 starts
+
+Ops records the UTC issue time of EACH used bootstrap, the UTC enrollment time of EACH seat, and the UTC host-admission time. Use the service-returned metadata: bootstrapIssuedAt = bootstrap expiresAt - 300; enrolledAt = credential expiresAt - 3600; leaseAdmittedAt = the fresh admitted host expiresAt - 86400. Record those times and the returned expiry values when each operation succeeds; never record bearer/private-key contents. Compare the arithmetic against the returned expiresAt values and synchronize host clocks before proceeding.
+
+The binding cutoff includes ALL of these: bootstrapIssuedAt + 300 for every used bootstrap, enrolledAt + 3600 for every seat, and leaseAdmittedAt + 86400. A bootstrap is consumed by enrollment, but this ruling still requires its 300-second cutoff; do not discard that bound to lengthen the test. It normally makes the available pilot window less than five minutes from the earliest used bootstrap issue, despite the one-hour credential lifetime.
+
+Set EARLIEST_BOUND to the minimum of those seven timestamps. Reserve at least 60 seconds for teardown, and set the exact whole UTC END minute to floor((EARLIEST_BOUND - 60 seconds) / 60 seconds) * 60 seconds. Ops chooses an EARLIER minute if its teardown needs more time; it must never move the recorded END later. If enrollment/verification/setup has already consumed the window, or less than a minute remains before END, do not start test 2: stop and tear down immediately. Do not ignore an expired bound or re-enroll/reset state to extend the same run.
+
+Before any test notice, Ops writes the computed value as a literal PILOT_END_UTC=YYYY-MM-DDTHH:MM:00Z in the pilot execution record on BOTH hosts, reads it back with the other operator, and prepares the exact scoped stop commands/roster in section H. An unset/ambiguous end time or missing teardown operator/roster blocks the test. The actual minute is computed after real enrollment; the package cannot invent a future enrollment time. No new timer service is introduced: Ops owns the clock watch and hard stop.
+
+TIMING_JSON is a public JSON record with leaseAdmittedAtUtc and seats keyed exactly spec-manager, foreman-bot, pilot-seat; each seat has bootstrapIssuedAtUtc and enrolledAtUtc, all recorded UTC ISO timestamps. Run this immediately after the last enrollment, before test 2:
+
+```sh
+# Forge — Ops, timing metadata only; record/read back the two printed UTC values on BOTH hosts
+python3 - "$TIMING_JSON" <<'PY_END'
+# PILOT_END_CALCULATION
+import datetime as dt
+import json
+import sys
+
+ROLES = {'spec-manager', 'foreman-bot', 'pilot-seat'}
+def timestamp(value):
+    parsed = dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
+    if parsed.tzinfo is None or parsed.utcoffset() != dt.timedelta(0):
+        raise ValueError('UTC timestamps required')
+    return int(parsed.timestamp())
+
+def pilot_end(record, now):
+    if set(record['seats']) != ROLES:
+        raise ValueError('all three enrollment records required')
+    admitted = timestamp(record['leaseAdmittedAtUtc'])
+    if not 0 <= admitted <= now:
+        raise ValueError('admission time invalid')
+    bounds = [admitted + 86400]
+    for seat in record['seats'].values():
+        issued = timestamp(seat['bootstrapIssuedAtUtc'])
+        enrolled = timestamp(seat['enrolledAtUtc'])
+        if not 0 <= issued <= enrolled <= now or enrolled >= issued + 300:
+            raise ValueError('bootstrap/enrollment times invalid')
+        bounds.extend((issued + 300, enrolled + 3600))
+    earliest = min(bounds)
+    end = ((earliest - 60) // 60) * 60
+    if end - now < 60:
+        raise ValueError('NO SAFE WINDOW: do not start; tear down now')
+    return earliest, end
+
+def utc(value):
+    return dt.datetime.fromtimestamp(value, dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+if __name__ == '__main__':
+    with open(sys.argv[1]) as stream:
+        record = json.load(stream)
+    earliest, end = pilot_end(record, int(dt.datetime.now(dt.timezone.utc).timestamp()))
+    print('EARLIEST_BOUND_UTC=' + utc(earliest))
+    print('PILOT_END_UTC=' + utc(end))
+PY_END
+```
+
+Worked example ONLY, not the live schedule: admission 2026-11-13T02:20:00Z; bootstrap issues at 02:22:00Z / 02:22:10Z / 02:22:20Z; corresponding enrollments at 02:22:05Z / 02:22:15Z / 02:22:25Z. The earliest bootstrap cutoff is 02:27:00Z, earlier than the credential cutoff 03:22:05Z and next-day lease cutoff. Computed immediately afterward, this run must record PILOT_END_UTC=2026-11-13T02:26:00Z (20:26 CST on November 12). At exactly 02:26:00Z stop test 2 and execute section H, even if a notice, agent or tool turn is still running. An earlier minute may be recorded to allow more teardown time.
+
 There is no pilot renewal allowlist, broker/runtime directory, publisher policy, publisher key/login, renewal service or timer installation. Do not invoke the legacy renewal commands for a pilot; pilot renewal rendering refuses. R templates/tests retained in the package/repository are compatibility artifacts, not part of this deployment. Future renewal through fleet-bridge's own entry needs its own plan. Root-to-ai publication and home-directory publisher keys are refused.
 
 This pilot is enrolled under ai in explicitly throwaway roots. Never reuse a pilot root as a final root. Final per-role accounts, private paths, the once-only durable init and the stock start/attach guard belong to S. This package builds neither S nor plan 003, and installs no arrival watcher or content encryption.
@@ -279,7 +339,7 @@ python3 "$PKG/setup-forge-box.py" enroll --bin-dir "$PKG/bin" \
   --bootstrap /etc/fleet-manager-bridge-remote-pilot/credentials/pilot-seat.bootstrap
 ```
 
-The helpers preserve host/seat/incarnation IDs. Expired unused bootstraps are reminted through bootstrap, never re-init. Credentials last one hour from each enrollment; note the earliest expiresAt and end test 2 before it. Renew nothing. Test the local pair and foreman/pilot in both directions with notices only. Preserve the original message UUID/payload/sequence for retry; receipt delivery is not a Forge seal or automatic model admission. Existing INTERFACE.md describes thread/factoryMessage and deferred/queue_only behavior. T2 adds no watcher.
+The helpers preserve host/seat/incarnation IDs. Expired unused bootstraps are reminted through bootstrap, never re-init. Credentials last one hour from each enrollment. BEFORE test 2, compute and record the exact PILOT_END_UTC in section A from all enrollment/bootstrap/admission times and returned expiries. Stop and tear down at that minute even if still running; do not merely watch the credential expiresAt. Renew nothing. Test the local pair and foreman/pilot in both directions with notices only. Preserve the original message UUID/payload/sequence for retry; receipt delivery is not a Forge seal or automatic model admission. Existing INTERFACE.md describes thread/factoryMessage and deferred/queue_only behavior. T2 adds no watcher.
 
 The standing connection uses actual Unix peer UIDs, pinned host/key/generation/service identity, bounded frames/2.5-second request deadlines, per-frame lease/key/revocation/bearer/boot checks and keepalive 15s/count 3. Idle/reconnect creates no model calls. Duplicate owners cannot replace a live socket; only matching durable inode/device/dead-incarnation proof permits stale cleanup. Public socket publication follows durable owner recording. Existing reboot fencing still requires explicit recovery; none of the operator helpers approves recovery automatically.
 
@@ -287,7 +347,21 @@ At each drained fork cutover Ops merges {"updater":{"autoUpdateEnabled":false}} 
 
 ## H. Remove only the throwaway pilot after drain
 
-Owner/Ops drains all three jobs and reconciles pending work before the earliest expiry. Through the approved Ops procedure stop/disable ONLY fleet-manager-bridge-pilot-source.service and fleet-manager-bridge-pilot.service; confirm their cgroups and the matching dev-3 SSH/source entry have exited. Never kill a reused/unproven PID or remove a live/unproven socket.
+The recorded PILOT_END_UTC is a HARD STOP, not a reminder to wait for the test to finish. Before starting test 2, Ops records the exact three pilot endpoint job/controller stop commands and verified unit/cgroup/process incarnations on each host in its approved execution roster. Do not invent unit names, kill all ai processes, or target an unverified/reused PID. Both operators have this roster and the same literal UTC end minute open before any notice is sent.
+
+AT that minute, even if still running, execute these teardown steps; do not extend END for a reply, receipt, agent, tool or successful test result:
+
+1. Stop new notices/model-turn admission immediately. Forge Ops/root disables/stops the source and hub using the command below, cutting off both remote and local mailbox service. Do not wait for model work to complete first.
+2. Concurrently, Forge and dev-3 Ops stop/cancel their three scoped pilot endpoint jobs using the recorded controller/unit/cgroup commands. Allow at most ten seconds for normal termination, then kill only still-running verified pilot cgroups/incarnations through the recorded controller. An unfinished test stays unfinished; preserve IDs and facts for later reconciliation, never fabricate completed receipts.
+3. Confirm both bridge units/cgroups and the matching dev-3 SSH/source entry have exited. If anything fails to stop, block further use, use the scoped forced termination in the roster and report the failure immediately; do not resume the pilot. Never remove a live/unproven socket.
+4. Remove this generation's transport authorization/key and SSH integration, restore the locked/no-sudo service account to nologin, validate/read back and RELOAD with the fallback session open, then remove only the verified throwaway roots/files below. Begin this cleanup at END rather than postponing it for ongoing work. Budget these operations inside the reserved margin; choose an earlier END before starting if that requires more than 60 seconds.
+
+```sh
+# Forge — Ops/root AT the recorded PILOT_END_UTC, even if test 2 is still running
+systemctl disable --now fleet-manager-bridge-pilot-source.service fleet-manager-bridge-pilot.service
+```
+
+These bridge units already bound stop time to ten seconds each. The scoped endpoint stop/kill roster is mandatory because this repo does not know the live pilot's external job/controller names. The hard stop does not depend on automatic credential expiry or renewal. A no-safe-window result from section A means execute this teardown immediately instead of starting a test.
 
 Remove only this generation's root key/SSH files, its generated include from managed configuration, units, public plan/reports and transport key directory after matching their recorded hashes/owners. Restore fleet-bridge's dev-3 shell to nologin with password locked/no sudo; keep restricted key lookup until the account is inaccessible. Validate/read back and reload sshd through Ops with fallback session open; never restart. Preserve unrelated operator keys and all received packages/CODEX_HOMEs/project directories. No renewal files need removal because none were installed.
 

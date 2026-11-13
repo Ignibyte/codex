@@ -1,6 +1,6 @@
 # Fork changelog
 
-- 2026-11-12: Plan 004 T2 reuses the unchanged 1112f runtime/voice in 1112f2, with renewal-off pilot staging, legacy sudo refusal, generated SSH reload policy and both-host verification before either unit starts.
+- 2026-11-12: Plan 004 T2 reuses the unchanged 1112f runtime/voice in 1112f2, with renewal-off pilot staging, legacy sudo refusal, generated SSH reload policy, both-host verification before either unit starts, and an exact UTC pilot end minute with mandatory teardown.
 
 - 2026-11-12: Plan 004 T adds the qualified Forge-initiated standing SSH transport, root-owned protocol launcher/policy generation and throwaway pilot runbook in whole package 1112f, version 0.167.2+ignibyte.1112f.
 
