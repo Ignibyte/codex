@@ -216,7 +216,7 @@ def main():
             raise RuntimeError('Base bwrap digest mismatch')
         if env['CODEX_BWRAP_SHA256'] != required_bwrap():
             raise RuntimeError('STOP: bwrap differs from the release source-build expectation: ' + env['CODEX_BWRAP_SHA256'])
-        shutil.copytree(base, base_stage)
+        shutil.copytree(base, base_stage, symlinks=True)
         (base_stage / 'MANIFEST.json').unlink(); (base_stage / 'SHA256SUMS').unlink()
         if a.output.name==source+'-1112f2':
             reuse_complete_package(base,base_stage,dest,base_manifest,source)
