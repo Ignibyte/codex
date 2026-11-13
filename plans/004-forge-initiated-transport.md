@@ -292,3 +292,52 @@ Generate a complete offline public pilot generation and separate private key sta
 **Files:** scripts/factory/{setup-forge-box.py,package.py,check_package.py,qualify_forge_transport.py,test_check_package.py}, new scripts/factory/test_pilot_operator.py; docs/{factory-setup.md,fork-mailbox.md}, CHANGELOG-FORK.md and this plan. Existing dispatcher and source-unit assets remain unchanged unless required by the approved generation contract. No codex-rs file, Rust/voice build, renewal-over-entry implementation, S, 003, installed folder or received dist is changed. If Rust is necessary, STOP for owner before packaging.
 
 **Proof:** Python operator/gate tests; isolated real sshd/PAM/systemd proof of complete staging, reload/fallback, both account reports, allowed-command/wrong-shell/unlocked/query-error negatives, no pre-gate unit action, key permissions, pilot legacy refusal/no mutation, no reverse proxy and actual renewal-OFF three-seat/four-edge transport. Reuse verified existing same-source fault binaries if compatibility lanes need them; never invoke Cargo/Bazel. Run real packaged shell/write/MCP turns and existing mailbox/legacy lanes, labeled compatibility; record proof script hashes. Gate completeness, compare every runtime/voice byte with 1112f, verify all sums, save /tmp/fork-004-T2-ready.txt with per-ruling file/line references; remove only owned isolated NVMe task root and stop at FORK PACKAGE READY. Shared caches and /tmp answer files remain.
+
+## T2 complete package proof — 2026-11-12
+
+All corrected pilot proofs PASS on head `a1c969c13e2023262b816669e7117c5b2e39aad2`. No codex-rs change or Cargo/Bazel/voice compilation occurred. Whole-base reuse preserves all 47 runtime/resource/voice/launcher inventory entries from 1112f, including symlink targets, runtime/voice source `c2f29c9f13bdd414736fc986284cb49672829c58`, Rust tree `d30e9c2479d2af6fc9967c1266419a3789794de3`, version `0.167.2+ignibyte.1112f` and bwrap `0ce4fa5b9da214841641f12032afa6cda3d93b45f321705fa8bde5fb2c270b74`. The three changed package payloads are SETUP.md, INTERFACE.md and setup-forge-box.py; the manifest lists old/new SHA-256 for all operator assets. The first unpublished staging attempt flattened a launcher link; the reuse comparison rejected it and copytree now preserves links. No runtime check was weakened.
+
+```text
+$ TMPDIR=$TASK/tmp python3 -m unittest discover -s scripts/factory -p test_pilot_operator.py
+Ran 8 tests
+OK
+$ TMPDIR=$TASK/tmp python3 -m unittest discover -s scripts/factory -p test_check_package.py
+Ran 9 tests
+OK
+$ # Python compile, git diff --check and runbook bash -n (commands parsed only)
+PASS
+$ TMPDIR=$TASK/tmp python3 scripts/factory/package.py --output dist/c2f29c9f13bdd414736fc986284cb49672829c58-1112f2 --source-commit c2f29c9f13bdd414736fc986284cb49672829c58 --base-package dist/1112f --work-dir $TASK/package-2
+Complete operator package created without Cargo/Bazel: /srv/stacks/codex/dist/c2f29c9f13bdd414736fc986284cb49672829c58-1112f2
+$ TMPDIR=$TASK/tmp python3 scripts/factory/qualify_forge_transport.py --package dist/c2f29c9f13bdd414736fc986284cb49672829c58-1112f2 --work-dir $TASK/full-proof --full-package-proof
+{"status":"passed","mailboxLanes":7,"packagedTools":true,"forgeInitiatedTransport":true,"transportChecks":22,"externalModelRequests":0,"externalFleetHostContacts":0,"bwrapSha256":"0ce4fa5b9da214841641f12032afa6cda3d93b45f321705fa8bde5fb2c270b74"}
+```
+
+R renewal/legacy setup results are explicitly compatibility-only in the qualification JSON; the actual pilot has NO renewal deployment. Production/fault bridge hashes match the reused 1112f source. Cached fault binaries were verified/reused, never rebuilt:
+
+```text
+codex cbea0232e1045568dfdd1604ebfec95495045be10244665f45a2a9bab99c7687
+codex-factory-bridge decdbd1e8e403f2eca68e1b1a10e03b93531a7b27ead1b86c7a55f640d8ebba5
+qualify_forge_transport.py d8dbe0972f87eaee278e1f26e62e9456092ed25b80f942ad0df775288f17f1fa
+```
+
+| Proof | Result | Seconds |
+| --- | --- | ---: |
+| Corrected renewal-OFF pilot / OpenSSH-PAM-systemd | 22 PASS | 29.01 |
+| Packaged shell/write/MCP | 3 PASS | 2.12 |
+| R renewal compatibility ONLY | 21 PASS | 20.46 |
+| Legacy setup compatibility ONLY | 3 seats / 4 edges PASS | 4.52 |
+| contract | 64 PASS | 0.21 |
+| credentials | 7 PASS | 4.98 |
+| recovery | 9 PASS | 17.4 |
+| native | 5 PASS | 2.12 |
+| lifecycle | 4 PASS | 1.67 |
+| durability | 7 PASS | 1.52 |
+| reconciliation | 5 lanes PASS | 10.38 |
+
+The 22 current groups prove public off-host staging starts/mutates nothing outside its staging folder and contains no private-key bytes; approval mismatch/refusal/no reverse proxy; no pilot R rendering/allowlist/publisher/renew units; real allowed-sudo-command/wrong-shell/unlocked-account/query-error negatives; generated Include/Match all/readback, syntax/fallback gates and reload retaining a real authenticated operator session; both fresh root account reports and four launcher lines before BOTH enables; key directory/file mode negatives; failed re-verification invalidating old reports; source boot/stale-report rejection; three one-hour kernel-UID enrollments/four permitted/two denied routes; duplicate/idle behavior, process deaths/owned stale cleanup and gated systemd restart; key/pin/UID/generation/reply bounds, commit/caller cuts and revoke/boot fences. Two mount views model the host-specific login shells under the same service UID; no live fleet hosts were contacted.
+
+Each real packaged tool turn used the packaged code-mode host, performed its verified shell/workspace-write/MCP effect and returned output to the local Responses fixture, with two local model requests per case. No owner Codex login/config/cache was read; external model/backend requests and fleet-host contacts are zero. This does not claim production routing/AppArmor/two-host operation: Ops must execute the generated reviewed checks, installed endpoint preflight/tools and notices-only pilot.
+
+Root sudo -l -U can return exit 0 while explicitly denying its target; condition 4 checks the complete explicit denial and rejects errors/allowed listings, rather than treating a particular exit code as proof. Root install uses no-follow directory descriptors/exclusive file creation. Activation rechecks the live Forge account/key and authenticated source boot; failed verification removes old success files. Reports are root:0600, generation/hash/host/boot-bound and at most 300 seconds old. No privileged remote diagnostic agent, second publisher login, service sudo, new protocol/Rust change, renewal-over-entry, S, 003 or host action was added.
+
+Package proof/hash and all 47 reused runtime hashes are in the manifest; old/new operator hashes make the revision explicit. All payload hashes must remain identical through the qualification seal. The pre-seal qualified-input manifest hash is recorded separately from final manifest/checksum hashes. The 14 known upstream-owned workspace failures remain failures in plan 002 and the manifest, not waived; no Rust tests were rerun because Rust is unchanged and compilation is explicitly forbidden. Main/origin main remain 32f47da69f46569d01d91ad2c412366f0c64bf07. The isolated NVMe task root is removed after final sealing; shared caches and frozen packages remain. Stop at FORK PACKAGE READY with the A–E/condition-4 file/line map saved to /tmp/fork-004-T2-ready.txt.
