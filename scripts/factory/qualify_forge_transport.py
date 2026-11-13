@@ -575,7 +575,8 @@ def full_package_proof(a):
     cached=Path('/mnt/fast/target')/manifest['target']/'dev-small'
     expected=manifest['compatibilityOnlyPriorQualification']['forgeTransport']['faultBridgeSha256']
     assert sha(cached/'codex-factory-bridge')==expected,'same-source cached fault bridge required; NO BUILD permitted'
-    identity=json.loads(run([cached/'codex','factory-info']).stdout)
+    home=a.work_dir/'identity-home';home.mkdir(mode=0o700)
+    identity=json.loads(run([cached/'codex','factory-info'],env={'PATH':'/usr/bin:/bin','HOME':str(home),'CODEX_HOME':str(home/'codex')}).stdout)
     assert identity['revision']==manifest['runtimeSourceCommit'] and identity['version']==manifest['workspaceVersion']
     pair=a.work_dir/'fault-pair';pair.mkdir(mode=0o755)
     for name in ('codex','codex-factory-bridge'):shutil.copy2(cached/name,pair/name)
