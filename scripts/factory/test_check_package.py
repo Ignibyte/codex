@@ -19,7 +19,7 @@ class CompletePackageTests(unittest.TestCase):
         self.source = self.root / 'executable'; self.source.write_text('fixture'); self.source.chmod(0o755)
         self.package = self.root / 'package'; self.package.mkdir()
         inputs = PackageInputs(self.source, self.source, self.source, self.source, self.source, None, None)
-        build_package_dir(self.package, '0.167.2+fixture', PACKAGE_VARIANTS['codex'],
+        build_package_dir(self.package, '0.169.0+fixture', PACKAGE_VARIANTS['codex'],
                           TARGET_SPECS['x86_64-unknown-linux-gnu'], inputs)
         for binary in gate.upstream_contract()['binaries'] + ['codex-factory-bridge']:
             if not (self.package / 'bin' / binary).exists():

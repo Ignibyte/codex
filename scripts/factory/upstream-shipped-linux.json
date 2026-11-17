@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "releaseTag": "rust-v0.167.2",
-  "releaseVersion": "0.167.2",
+  "releaseTag": "rust-v0.169.0",
+  "releaseVersion": "0.169.0",
   "upstreamTarget": "x86_64-unknown-linux-musl",
   "forkTarget": "x86_64-unknown-linux-gnu",
-  "archiveUrl": "https://github.com/openai/codex/releases/download/rust-v0.167.2/codex-package-x86_64-unknown-linux-musl.tar.gz",
-  "archiveSha256": "3d77be1748d35a4bb0e7f8752cde3b11890c63338e8c599f01eafa4a59e17b3d",
+  "archiveUrl": "https://github.com/openai/codex/releases/download/rust-v0.169.0/codex-package-x86_64-unknown-linux-musl.tar.gz",
+  "archiveSha256": "3b8ed091149cc63a59046b9f094bcfa21cdb4dda15ede441ce369bcee4a71ba0",
   "archivePaths": 44,
   "installedPaths": 45,
   "launcher": {
@@ -13,11 +13,6 @@
     "target": "bin/codex",
     "upstreamSource": "scripts/install/install.sh",
     "sourceSha256": "5a8eea5c3716b555fd8e539db7e5b0e7470bcee5693191b4758a0de373624a70"
-  },
-  "ownerComparison": {
-    "file": "/tmp/stock-standalone-0.167.1-files.txt",
-    "sha256": "1015319fd39a335536735b9f221bf78754cc3faa389356712a2c6f32474f62e8",
-    "description": "Owner measured 0.167.1 standalone and 0.167.2 daemon installations; same 45 paths. Official 0.167.2 standalone archive independently verified above, plus upstream installer launcher."
   },
   "paths": [
     "bin/codex",
