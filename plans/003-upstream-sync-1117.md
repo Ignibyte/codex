@@ -290,3 +290,23 @@ The user bus returned. The resume command reused the existing binaries, complete
 The release fixture controls used package binaries solely as diagnostic substitutes. The upstream package archive was rechecked against its recorded checksum and extracted to scratch. Temporary Code Mode host links were removed. No seat install, package mutation, source fixture compilation, or changes to the proposed tests took place. Scoped fixture runs peaked at 976 MiB with original PATH and 188 MiB with the approved PATH. Free disk at the end was 82 GiB.
 
 **Final attribution for all 167 original outcomes** — A 111, B 39, C 2, D 2, upstream-shared 13, unmatched 0. The original 93 are accounted for by 80 with environment evidence and 13 with matching failures on the release tag. The latter are still red and their matching signatures establish that the fork is not required to reproduce them on Forge. They do not establish whether each shared problem requires a host condition or an upstream code fix. The D list remains the standalone executor version assertion and the Kitty file-reference assertion. No additional fork-only failure was observed. The snapshot and test changes above are proposed for owner approval only, and the workspace release hold remains in effect.
+
+### Test-only follow-up — approved 09:10 CST, confirmed 09:18 CST
+
+Owner brief `/tmp/fork-brief-003-final.txt` approves the 39 snapshot version fixtures and two test corrections. Ops owns installation of the accepted 1117a package. The proof selects exactly the 41 original cases on the stamped fork and uses the already approved bwrap PATH, one Cargo job, no test debuginfo, Ops' wrapper and the 50 GiB floor. The intentionally long prompt fixture runs inside the existing short-viewport test. This follow-up also lists the 13 upstream-shared signatures in the changelog. The owner canceled the separate copy-file CLI fixture compilation.
+
+At 09:25 CST the owner narrowed the seam to `codex-rs/tui/src/version.rs`. The existing constant uses the fixed development version in TUI unit tests and the original compile-time stamp in production. No use sites changed. The update-prompt test sets its existing version field directly before layout. Other direct stamp reads in connection metadata, startup and telemetry stay as written. The session metrics test already reads the compiled stamp explicitly. Review diff `/tmp/fork003-build/triage/test-fixes-single-file-seam.diff` was shown before proof. The owner authorized the Doctor integration test's Cargo-required CLI dependency in a separate scratch target only after the other 39 pass.
+
+#### Proof result
+
+All 41 original tests passed on the stamped fork. Compared the exact binary/test pairs in `/tmp/fork003-build/triage/fix-proposal.filter` with the PASS lines in the three Nextest logs. The sets match exactly. Each invocation used `--locked --offline --no-fail-fast --retries 0 --test-threads 1` under Ops' wrapper with one Cargo job and the approved bwrap directory on PATH.
+
+| Exact selection | Result | Scope peak |
+| --- | --- | ---: |
+| `-p codex-tui --lib` and the 38-case TUI filter | 38 passed in 12.775s. The long-version fixture selects “Skip until next version” in the original 28×12 viewport and preserves the footer. | 8,185 MiB |
+| `-p codex-exec-server-cli --test standalone` and the standalone filter | 1 passed in 1.591s. The source fixture reports the development fallback and the standalone package fixture reports its manifest version. | 4,897 MiB |
+| `-p codex-cli --test doctor_enterprise_network` and the two Doctor cases | 2 passed in 0.624s. Both verify the stamped title before normalizing it for the snapshot. | 7,158 MiB |
+
+The first TUI attempt passed 37/38. The added long-version fixture inherited the highlight changed by the first fixture's Escape key. The corrected test creates a fresh prompt and independently selects the intended option. The rerun passed all 38. Existing snapshot files and test selections were preserved.
+
+Doctor started after the first 39 passed and used only the separate `/tmp/fork003-build/doctor-proof-target`. Removed that 5.3 GiB directory after both Doctor cases passed. Free space afterward was 72 GiB. The primary scratch target and triage logs remain available. The 13 upstream-shared red cases are individually listed in the changelog. No install, push or package change was made.

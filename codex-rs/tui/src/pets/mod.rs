@@ -346,31 +346,42 @@ mod tests {
 
     #[test]
     fn kitty_local_file_pet_image_uses_file_reference_without_inline_payload() {
+        use base64::Engine as _;
+
         let dir = tempfile::tempdir().unwrap();
-        let frame = dir.path().join("frame.png");
-        std::fs::write(&frame, b"png").unwrap();
-        let request = AmbientPetDraw {
-            frame,
-            protocol: ImageProtocol::KittyLocalFile,
-            x: 2,
-            y: 3,
-            clear_top_y: 3,
-            columns: 4,
-            rows: 2,
-            height_px: 75,
-            sixel_dir: PathBuf::new(),
-        };
-        let mut output = Vec::new();
-        let mut state = PetImageRenderState::default();
+        for filename in ["frame.png", "xframe.png", "xxframe.png"] {
+            let frame = dir.path().join(filename);
+            std::fs::write(&frame, b"png").unwrap();
+            let expected_path = frame.canonicalize().unwrap();
+            let request = AmbientPetDraw {
+                frame,
+                protocol: ImageProtocol::KittyLocalFile,
+                x: 2,
+                y: 3,
+                clear_top_y: 3,
+                columns: 4,
+                rows: 2,
+                height_px: 75,
+                sixel_dir: PathBuf::new(),
+            };
+            let mut output = Vec::new();
+            let mut state = PetImageRenderState::default();
 
-        render_ambient_pet_image(&mut output, &mut state, Some(request)).unwrap();
+            render_ambient_pet_image(&mut output, &mut state, Some(request)).unwrap();
 
-        let output = String::from_utf8(output).unwrap();
-        assert!(output.contains("a=d,d=I,i=49374,q=2;"));
-        assert!(output.contains("\x1b[4;3H"));
-        assert!(output.contains("a=T,t=f,f=100,c=4,r=2,q=2,i=49374,C=1;"));
-        assert!(!output.contains("cG5n"));
-        assert!(output.contains("\x1b8"));
+            let output = String::from_utf8(output).unwrap();
+            assert!(output.contains("a=d,d=I,i=49374,q=2;"));
+            assert!(output.contains("\x1b[4;3H"));
+            let (_, payload) = output
+                .split_once("a=T,t=f,f=100,c=4,r=2,q=2,i=49374,C=1;")
+                .expect("Kitty file transfer");
+            let (payload, _) = payload.split_once('\x1b').expect("Kitty terminator");
+            let decoded = base64::engine::general_purpose::STANDARD
+                .decode(payload)
+                .unwrap();
+            assert_eq!(decoded, expected_path.to_string_lossy().as_bytes());
+            assert!(output.contains("\x1b8"));
+        }
     }
 
     #[test]

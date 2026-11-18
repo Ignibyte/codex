@@ -174,8 +174,22 @@ async fn standalone_initializes_reports_version_and_runs_helpers() -> anyhow::Re
         }
         sandboxes
     };
-    for sandbox in sandboxes {
-        let mut child = tokio::process::Command::from(background_command(&binary))
+    let package = directory.path().join("package");
+    let package_bin = package.join("bin");
+    std::fs::create_dir_all(&package_bin)?;
+    let packaged_binary = package_bin.join(binary.file_name().context("executor filename")?);
+    std::fs::copy(&binary, &packaged_binary)?;
+    let manifest_version = "8.7.6+standalone-fixture";
+    std::fs::write(
+        package.join("codex-package.json"),
+        serde_json::to_vec(&json!({"version": manifest_version}))?,
+    )?;
+    let cases = sandboxes
+        .into_iter()
+        .map(|sandbox| (&binary, "0.0.0", sandbox))
+        .chain(std::iter::once((&packaged_binary, manifest_version, None)));
+    for (binary, expected_version, sandbox) in cases {
+        let mut child = tokio::process::Command::from(background_command(binary))
             .args(["--listen", "stdio"])
             .current_dir(directory.path())
             .env("CODEX_HOME", directory.path())
@@ -194,7 +208,7 @@ async fn standalone_initializes_reports_version_and_runs_helpers() -> anyhow::Re
         assert_eq!(response["id"], 1);
         assert!(response["result"]["sessionId"].is_string(), "{response}");
         let environment = response["result"]["environmentInfo"].clone();
-        assert_eq!(environment["executorVersion"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(environment["executorVersion"], expected_version);
         let initialized = json!({"method": "initialized", "params": {}});
         let info = json!({"id": 2, "method": "environment/info", "params": {}});
         stdin

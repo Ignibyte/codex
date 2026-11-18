@@ -283,11 +283,13 @@ mod tests {
     use ratatui::widgets::FrameExt;
 
     fn new_prompt() -> UpdatePromptScreen {
-        UpdatePromptScreen::new(
+        let mut screen = UpdatePromptScreen::new(
             FrameRequester::test_dummy(),
             "9.9.9".into(),
             UpdateAction::NpmGlobalLatest,
-        )
+        );
+        screen.current_version = "0.0.0".into();
+        screen
     }
 
     #[test]
@@ -361,6 +363,21 @@ mod tests {
         assert!(words.contains("enter continue · esc skip"));
         assert_eq!(screen.selection(), None);
         insta::assert_snapshot!(format!("update_picker_selected_{width}x{height}"), rendered);
+        screen.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(screen.selection(), Some(UpdateSelection::NotNow));
+
+        let mut screen = new_prompt();
+        screen.current_version = "123.456.789+snapshot-fixture".into();
+        screen.update_action = UpdateAction::StandaloneWindows;
+        screen.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        terminal
+            .draw(|frame| frame.render_widget_ref(&screen, frame.area()))
+            .expect("render long-version update picker");
+        let rendered = terminal.backend().to_string();
+        assert!(rendered.contains("123.456.789+"));
+        assert!(rendered.contains("› 3. Skip until next version"));
+        let words = rendered.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(words.contains("enter continue · esc skip"));
         screen.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!(screen.selection(), Some(UpdateSelection::NotNow));
     }

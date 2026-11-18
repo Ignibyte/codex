@@ -1,5 +1,7 @@
 # Fork changelog
 
+- 2026-11-18 — Plan 003 stabilizes stamped-build snapshots and corrects the standalone executor version and Kitty file-reference tests.
+
 - 2026-11-18 — Plan 003 normalizes package permissions and checks readability for installed seats.
 
 - 2026-11-18 — Plan 003 merges upstream Codex 0.169.0 and builds the complete 1117a package. Workspace failures and remaining Ops proofs are recorded in the plan.
@@ -19,3 +21,19 @@
 - 2026-11-10: Plan 001 merges upstream 627b579219 (791 commits since the common base), retaining restored factory integration, persistent agents, roles, cross-account messaging and the fork workflow; regenerate the lockfile and protocol schemas with Cargo/upstream tooling. Local mailbox qualification: 22 PASS, one pre-existing delivery-fixture failure and 19 explicit skips, recorded in the plan.
 
 - 2026-11-09: reset to the 10-27 factory state (cf021-brief-run-a); added WORKFLOW.md and AGENTS.md.
+
+## Known red on rust-v0.169.0 on this box
+
+- `transport::remote_control::tests::remote_control_waits_for_account_id_before_enrolling` — Enrollment request missed the 100 ms deadline after auth reload.
+- `suite::v2::mcp_server_status::mcp_server_status_list_tools_and_auth_only_skips_slow_inventory_calls` — Tools/auth-only MCP inventory exceeded its 500 ms response deadline.
+- `suite::v2::web_search::model_lab_search_provider::critical_discovery_error` — Two scoped model-lab tools/list calls instead of one.
+- `suite::v2::web_search::model_lab_search_provider::failed_invocation_never_replays_on_native` — Two scoped model-lab tools/list calls instead of one.
+- `suite::v2::web_search::model_lab_search_provider::host_disables_literature_only` — Two scoped model-lab tools/list calls instead of one.
+- `suite::v2::web_search::model_lab_search_provider::inherit_connector_version` — Two scoped model-lab tools/list calls instead of one.
+- `suite::v2::web_search::model_lab_search_provider::matching_query_filter_cannot_authorize_cached_navigation` — Two scoped model-lab tools/list calls instead of one.
+- `suite::v2::web_search::model_lab_search_provider::work_hosted_only` — Two scoped model-lab tools/list calls instead of one.
+- `suite::v2::web_search::model_lab_search_provider::xatu_control` — Two scoped model-lab tools/list calls instead of one.
+- `suite::v2::web_search::model_lab_search_provider::xatu_literature_treatment` — Two scoped model-lab tools/list calls instead of one.
+- `suite::v2::turn_start::turn_start_enforces_managed_network_sandbox` — Managed-network proxy probe returned EAGAIN after the sandbox child started.
+- `tests::policy_resolution_retries_after_auth_refresh` — Policy remained absent after auth refresh.
+- `tests::world_state_stops_after_rejected_refresh` — Mock settings endpoint received one matching request instead of two.

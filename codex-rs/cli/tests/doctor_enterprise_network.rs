@@ -206,6 +206,12 @@ async fn network_only_config_failure_does_not_guess_probe_targets() -> Result<()
     Ok(())
 }
 
+fn normalize_doctor_title(stdout: &str) -> Result<String> {
+    let (title, body) = stdout.split_once('\n').context("Doctor output title")?;
+    assert_eq!(title, concat!("Codex Doctor v", env!("CARGO_PKG_VERSION")));
+    Ok(format!("Codex Doctor v0.0.0\n{body}"))
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn network_only_human_output() -> Result<()> {
     let (_server, home) = local_provider().await?;
@@ -220,7 +226,10 @@ async fn network_only_human_output() -> Result<()> {
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
     assert!(output.status.success(), "{stdout}");
-    insta::assert_snapshot!("network_only_human_output", stdout);
+    insta::assert_snapshot!(
+        "network_only_human_output",
+        normalize_doctor_title(&stdout)?
+    );
     Ok(())
 }
 
@@ -243,7 +252,10 @@ async fn network_only_config_failure_human_output() -> Result<()> {
     let file_row = Regex::new(r"(?m)^(      file +).+[\\/]config\.toml$")?;
     assert!(file_row.is_match(&stdout), "{stdout}");
     let stdout = file_row.replace_all(&stdout, "${1}<CODEX_HOME>/config.toml");
-    insta::assert_snapshot!("network_only_config_failure_human_output", stdout);
+    insta::assert_snapshot!(
+        "network_only_config_failure_human_output",
+        normalize_doctor_title(&stdout)?
+    );
     Ok(())
 }
 
