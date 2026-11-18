@@ -145,3 +145,15 @@ nice -n 10 python3 -B scripts/factory/qualify_contract.py \
 ```
 
 The retained `prove-package.py` prints the bwrap resource, MANIFEST and embedded CLI digests and requires all three to match, then runs the relocated voice handshake. Use `OPS-QUALIFIERS.md` for the six separate-UID commands and signed-in catalog, execution and tool proofs. After recording the actual results and build debug profile, seal them with `nice -n 10 python3 -B scripts/factory/package.py --output dist/1117a --record-qualification "$work/qualification.json"` and recheck SHA256SUMS. Document the release and changelog before separate merge review.
+
+## Package facts — 2026-11-18
+
+- Canonical package `/home/ai/codex-fork-build/dist/1117a`, Ops release folder `a24cbd078500328a6a5891ea5a370292176e1949-1117a`, CLI `0.169.0+ignibyte.1117a`.
+- Independent completeness gate passed with empty missing, nonexecutable and error lists. All 52 SHA256SUMS entries passed.
+- The packaged bwrap file, `MANIFEST.json` field `bwrapEmbeddedSha256`, and exact embedded CLI string all read `600bc13837f72386cf53f9e2e5681424ca9aced69c71b34da6eef6bd96153345`.
+- Bundled IDs from the packaged CLI are `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-daybreak-blue-latest`, `gpt-daybreak-red-latest`, `gpt-5.5`, `codex-auto-review`. Signed-in GPT-6.2 Sol discovery and execution remain with Ops.
+- Packaged bridge contract passed 64 checks. A relocated whole-package copy passed Hello, InitializeRuntime and Close. The initial voice probe used a different registry path and was correctly refused. The corrected probe used the required `GST_REGISTRY=/dev/null`.
+
+Ops scope `forge-build-fork003-20261117T193146.scope` passed at one Cargo job with the unchanged optimized + debuginfo release profile. Peak was 10,885 MiB and Cargo elapsed time was 286m 11s. Canonical packaging passed in `forge-build-fork003-20261118T001935.scope` with a 4,343 MiB peak. No reduced-debug release override was used.
+
+The owner directed the workspace proof to use one Cargo job and eight test threads with `CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0`. Those overrides apply only to the workspace proof. The 50 GiB disk floor remains active. Six separate-UID qualifiers and live signed-in tool and model proof remain pending Ops.
