@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Regression guard for omitted upstream files and future upstream list changes."""
 import json
+import os
 from pathlib import Path
 import shutil
+import stat
 import tempfile
 import unittest
 
 import check_package as gate
+from package import normalize_package_modes, seal
 from codex_package.layout import build_package_dir
 from codex_package.targets import PACKAGE_VARIANTS, TARGET_SPECS, PackageInputs
 
@@ -70,6 +73,29 @@ class CompletePackageTests(unittest.TestCase):
         self.assertTrue(gate.check(self.package)['passed'])
         license.unlink()
         self.assertIn(str(license.relative_to(self.package)), gate.check(self.package)['missing'])
+
+    def test_restrictive_umask_does_not_leak_into_package(self):
+        old_umask = os.umask(0o077)
+        try:
+            notice = self.package / 'INTERFACE.md'
+            notice.write_text('fixture notice')
+            executable = self.package / 'bin/codex'
+            executable.chmod(0o700)
+            result = gate.check(self.package)
+            self.assertFalse(result['passed'])
+            self.assertIn('bin/codex', result['notExecutable'])
+            self.assertTrue(any('unreadable by other users: INTERFACE.md' in error
+                                for error in result['errors']))
+
+            normalize_package_modes(self.package)
+            seal(self.package, {})
+            self.assertTrue(gate.check(self.package)['passed'])
+            for name in ('INTERFACE.md', 'MANIFEST.json', 'SHA256SUMS'):
+                self.assertEqual(stat.S_IMODE((self.package / name).stat().st_mode), 0o644)
+            self.assertEqual(stat.S_IMODE(executable.stat().st_mode), 0o755)
+            self.assertEqual((self.package / 'codex').readlink(), Path('bin/codex'))
+        finally:
+            os.umask(old_umask)
 
     def test_release_version_change_requires_a_new_shipped_inventory(self):
         repo = self.fixture_repo(); path = repo / gate.SHIPPED

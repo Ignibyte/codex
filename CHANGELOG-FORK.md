@@ -1,5 +1,7 @@
 # Fork changelog
 
+- 2026-11-18 — Plan 003 normalizes package permissions and checks readability for installed seats.
+
 - 2026-11-18 — Plan 003 merges upstream Codex 0.169.0 and builds the complete 1117a package. Workspace failures and remaining Ops proofs are recorded in the plan.
 
 - 2026-11-12: Plan 002 corrects the shipped-package gate and adds the upstream voice bundle and root launcher in 1112d, preserving the 1112c CLI/bwrap bytes and sandbox precondition.

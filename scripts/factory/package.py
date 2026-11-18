@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 
-from check_package import REPO, SUPPORTED_TARGETS, check, upstream_contract
+from check_package import REPO, SUPPORTED_TARGETS, check, is_package_executable, upstream_contract
 from codex_package.targets import TARGET_SPECS
 from codex_package.v8 import resolve_codex_v8_cargo_env
 from codex_package.version import read_workspace_version
@@ -60,6 +60,20 @@ def seal(directory, manifest):
     (directory / 'MANIFEST.json').write_text(json.dumps(manifest, indent=2) + '\n')
     paths = sorted(p for p in directory.rglob('*') if p.is_file() and p.name != 'SHA256SUMS')
     (directory / 'SHA256SUMS').write_text(''.join(digest(p) + '  ' + str(p.relative_to(directory)) + '\n' for p in paths))
+    for name in ('MANIFEST.json', 'SHA256SUMS'):
+        (directory / name).chmod(0o644)
+
+
+def normalize_package_modes(directory):
+    directory.chmod(0o755)
+    for path in directory.rglob('*'):
+        if path.is_symlink():
+            continue
+        if path.is_dir():
+            path.chmod(0o755)
+        elif path.is_file():
+            relative = path.relative_to(directory).as_posix()
+            path.chmod(0o755 if is_package_executable(relative) else 0o644)
 
 
 def operator_assets(directory):
@@ -127,6 +141,7 @@ def main():
         manifest['packagingScriptsSha256'] = packaging_hashes()
         shutil.copy2(REPO / 'docs/fork-mailbox.md', dest / 'INTERFACE.md')
         operator_assets(dest)
+        normalize_package_modes(dest)
         seal(dest, manifest)
         if manifest['qualification'].get('status') == 'passed':
             print(ready_line(dest, manifest), flush=True)
@@ -207,13 +222,14 @@ def main():
     assemble(base_stage, voice_inputs / 'codex-voice-host', a.target, source, stage,
              runtime=voice_inputs / 'release-runtime', release_version=read_workspace_version())
     (stage / 'codex').symlink_to('bin/codex')
+    shutil.copy2(REPO / 'docs/fork-mailbox.md', stage / 'INTERFACE.md')
+    operator_assets(stage)
+    normalize_package_modes(stage)
     verify_voice(stage, source, a.target, read_workspace_version())
     if base_manifest:
         for relative in contract['upstreamFiles'] + ['bin/codex-factory-bridge']:
             if digest(stage / relative) != base_manifest['files'][relative]['sha256']:
                 raise RuntimeError('Existing runtime file changed during voice assembly: ' + relative)
-    shutil.copy2(REPO / 'docs/fork-mailbox.md', stage / 'INTERFACE.md')
-    operator_assets(stage)
     result = check(stage, a.target)
     print(json.dumps(result, indent=2), flush=True)
     if not result['passed']:

@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import stat
 import sys
 import tempfile
 
@@ -88,14 +89,18 @@ def upstream_contract(target='x86_64-unknown-linux-gnu', repo=REPO):
                                  for p in (ACTION, ARCHIVE, Path('scripts/codex_package/layout.py'), SHIPPED)})
 
 
+def is_package_executable(relative):
+    return relative.startswith(('bin/', 'codex-path/', 'codex-resources/voice/bin/')) or relative in (
+        'codex', 'codex-resources/bwrap',
+    )
+
+
 def check(directory, target='x86_64-unknown-linux-gnu', repo=REPO):
     contract = upstream_contract(target, repo=repo)
     required = sorted(set(contract['upstreamFiles'] + contract['shippedFiles'] + ['bin/codex-factory-bridge']))
     missing = [p for p in required if not (directory / p).is_file()]
-    executables = [p for p in required if p.startswith(('bin/', 'codex-path/', 'codex-resources/voice/bin/'))
-                   or p in ('codex', 'codex-resources/bwrap')]
-    nonexec = [p for p in executables if (directory / p).is_file()
-               and not os.access(directory / p, os.X_OK)]
+    nonexec = [p for p in required if is_package_executable(p) and (directory / p).is_file()
+               and not (directory / p).stat().st_mode & stat.S_IXOTH]
     errors = []
     launcher = directory / 'codex'
     if not launcher.is_symlink() or os.readlink(launcher) != 'bin/codex':
@@ -104,6 +109,14 @@ def check(directory, target='x86_64-unknown-linux-gnu', repo=REPO):
                 and not (directory / p).resolve().is_relative_to(directory.resolve())]
     if external:
         errors.append('Required files resolve outside the package: ' + ', '.join(external))
+    unreadable = sorted(str(path.relative_to(directory)) for path in directory.rglob('*')
+                        if path.is_file() and not path.stat().st_mode & stat.S_IROTH)
+    if unreadable:
+        errors.append('Package files are unreadable by other users: ' + ', '.join(unreadable))
+    inaccessible = sorted(str(path.relative_to(directory)) for path in [directory, *directory.rglob('*')]
+                          if path.is_dir() and not path.stat().st_mode & stat.S_IXOTH)
+    if inaccessible:
+        errors.append('Package directories are not traversable by other users: ' + ', '.join(inaccessible))
     if not missing:
         try:
             validate_package_dir(directory, PACKAGE_VARIANTS['codex'], TARGET_SPECS[target])
