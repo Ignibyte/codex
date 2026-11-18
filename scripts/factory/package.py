@@ -128,6 +128,9 @@ def main():
     a = p.parse_args(); dest = a.output.resolve()
     if dest.parent != REPO / 'dist':
         raise RuntimeError('Output must be a direct child of the fork dist directory')
+    # Keep staging traversable even under a restrictive caller umask. The final
+    # pass also normalizes source modes retained by copy2 and voice assembly.
+    os.umask(0o022)
     if a.record_qualification:
         manifest = json.loads((dest / 'MANIFEST.json').read_text())
         run(['sha256sum', '-c', 'SHA256SUMS'], cwd=dest)
