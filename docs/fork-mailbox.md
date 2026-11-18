@@ -1,4 +1,8 @@
-# Fork mailbox and the 2026-11-12 upstream sync
+# Fork mailbox and upstream syncs
+
+Plan 003 builds the complete `dist/1117a/` package from upstream `rust-v0.169.0`, stamped `0.169.0+ignibyte.1117a`. The verified source, bwrap digest and qualification status are recorded in `plans/003-upstream-sync-1117.md`. The workspace suite has failures under review. Ops handles the remaining live proofs and rollout.
+
+## Historical Plan 002 record
 
 Plan 002 imports upstream `c0cc9fc820f62e4dbdde68214dd6d792d6c8a7ee` while retaining the factory mailbox, app-server integration, CLI additions, and agent roles.
 

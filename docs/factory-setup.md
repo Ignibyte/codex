@@ -1,4 +1,8 @@
-# Forge / dev-3 bridge setup — complete package 1112d
+# Forge / dev-3 bridge setup
+
+For Plan 003, use the whole `dist/1117a` package. After rollout approval, use `a24cbd078500328a6a5891ea5a370292176e1949-1117a` as the release folder and substitute its actual installed path in the 1112d examples below. Verify the package checksums. Ops must authorize the actual installed bwrap path and SHA-256 `600bc13837f72386cf53f9e2e5681424ca9aced69c71b34da6eef6bd96153345` and run the endpoint preflight there. See Plan 003 for outstanding qualification.
+
+## Historical 1112d setup examples
 
 Owner installation only. This runbook does not deploy or start anything from z690.
 Install **all of dist/1112d**, including its root metadata, `codex -> bin/codex` link and sibling directories. Keep the complete `codex-resources/voice/` tree: helper, runtime libraries/plugins, manifests, notices and licenses. 1112c is frozen and lacks that shipped bundle. 1112d preserves its CLI and bwrap bytes; the new install path still needs Ops' AppArmor permission.

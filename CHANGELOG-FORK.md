@@ -1,5 +1,7 @@
 # Fork changelog
 
+- 2026-11-18 — Plan 003 merges upstream Codex 0.169.0 and builds the complete 1117a package. Workspace failures and remaining Ops proofs are recorded in the plan.
+
 - 2026-11-12: Plan 002 corrects the shipped-package gate and adds the upstream voice bundle and root launcher in 1112d, preserving the 1112c CLI/bwrap bytes and sandbox precondition.
 
 - 2026-11-12: Plan 002 adds manifest-pinned sandbox preflight and plain enrollment refusal for restricted Ubuntu, documents relocation/Ops preconditions, and prints bwrap digests in package READY lines without rebuilding 1112c.
